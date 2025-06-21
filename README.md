@@ -1,4 +1,4 @@
-# 🤖 GeminiChatbotv6
+# 🤖 GeminiChatbotv7
 
 > **Advanced AI Chatbot with Multi-Modal Capabilities**
 
