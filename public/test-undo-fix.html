@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Undo Enhancement Fix</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        .test-container {
+            background-color: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .step {
+            margin: 15px 0;
+            padding: 10px;
+            background-color: #333;
+            border-radius: 4px;
+            border-left: 4px solid #6366f1;
+        }
+        .step.success {
+            border-left-color: #10b981;
+            background-color: #1a2a1a;
+        }
+        .step.error {
+            border-left-color: #ef4444;
+            background-color: #2a1a1a;
+        }
+        button {
+            background-color: #6366f1;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #5855eb;
+        }
+        button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+        .history-display {
+            background-color: #1a1a1a;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .current-state {
+            background-color: #2a2a2a;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Undo Enhancement Fix</h1>
+    <p>This page tests the fix for the prompt enhancer undo functionality bug.</p>
+
+    <div class="test-container">
+        <h2>Manual Test Scenario</h2>
+        <p>Follow these steps to test the undo functionality:</p>
+
+        <div class="step">
+            <strong>Step 1:</strong> Go to the main chat interface at <a href="http://localhost:3002" target="_blank" rel="noopener">http://localhost:3002</a>
+        </div>
+
+        <div class="step">
+            <strong>Step 2:</strong> Type a simple prompt like "create an image of a cat"
+        </div>
+
+        <div class="step">
+            <strong>Step 3:</strong> Click the "✨ Enhance" button and wait for enhancement to complete
+        </div>
+
+        <div class="step">
+            <strong>Step 4:</strong> Verify the prompt text has been enhanced (should be longer and more detailed)
+        </div>
+
+        <div class="step">
+            <strong>Step 5:</strong> Look for the undo button (↶ icon) that should appear after enhancement
+        </div>
+
+        <div class="step">
+            <strong>Step 6:</strong> Click the undo button
+        </div>
+
+        <div class="step">
+            <strong>Step 7:</strong> Verify the original prompt is restored exactly as typed in Step 2
+        </div>
+
+        <div class="step">
+            <strong>Step 8:</strong> Check for success toast message "✅ Undone - Reverted to previous version"
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h2>What Was Fixed</h2>
+        <div class="step">
+            <strong>Root Cause:</strong> History initialization race condition between useEffect and enhancement logic
+        </div>
+        <div class="step">
+            <strong>Problem:</strong> The useEffect was continuously reinitializing history when the user typed, overwriting the proper enhancement history
+        </div>
+        <div class="step">
+            <strong>Solution:</strong> Removed conflicting history initialization from useEffect and consolidated history management in the enhancement process only
+        </div>
+        <div class="step">
+            <strong>Improvements:</strong> Added better validation, logging, and error handling in the undo function
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h2>Expected Behavior After Fix</h2>
+        <div class="step success">
+            ✅ History is only initialized during the first enhancement, not on every input change
+        </div>
+        <div class="step success">
+            ✅ Undo button properly restores the original prompt text
+        </div>
+        <div class="step success">
+            ✅ History state remains consistent throughout the enhancement workflow
+        </div>
+        <div class="step success">
+            ✅ Better error messages and validation for edge cases
+        </div>
+        <div class="step success">
+            ✅ Console logging provides clear debugging information
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h2>Code Changes Made</h2>
+        <div class="step">
+            <strong>File:</strong> components/ui/animated-ai-input.tsx
+        </div>
+        <div class="step">
+            <strong>Change 1:</strong> Removed conflicting useEffect history initialization (lines 346-368)
+        </div>
+        <div class="step">
+            <strong>Change 2:</strong> Improved handleEnhancePrompt to properly initialize history only on first enhancement
+        </div>
+        <div class="step">
+            <strong>Change 3:</strong> Enhanced handleUndo with better validation and error handling
+        </div>
+        <div class="step">
+            <strong>Change 4:</strong> Added comprehensive logging for debugging
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h2>Test Results</h2>
+        <div id="testResults">
+            <p>Open the main application and follow the manual test steps above to verify the fix.</p>
+        </div>
+    </div>
+
+    <script>
+        // Simple test result tracking
+        function logTestResult(step, success, message) {
+            const resultsDiv = document.getElementById('testResults');
+            const resultElement = document.createElement('div');
+            resultElement.className = `step ${success ? 'success' : 'error'}`;
+            resultElement.innerHTML = `<strong>Step ${step}:</strong> ${message}`;
+            resultsDiv.appendChild(resultElement);
+        }
+
+        // Instructions for manual testing
+        console.log('Prompt Enhancer Undo Fix Test');
+        console.log('=============================');
+        console.log('1. Open http://localhost:3002 in a new tab');
+        console.log('2. Type a simple prompt');
+        console.log('3. Click enhance button');
+        console.log('4. Wait for enhancement');
+        console.log('5. Click undo button');
+        console.log('6. Verify original prompt is restored');
+    </script>
+</body>
+</html>

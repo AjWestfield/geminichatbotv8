@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Undo Enhancement</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #1a1a1a;
+      color: #fff;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .history {
+      background: #2a2a2a;
+      padding: 10px;
+      border-radius: 5px;
+      margin: 10px 0;
+    }
+    .log {
+      background: #333;
+      padding: 10px;
+      border-radius: 5px;
+      margin: 10px 0;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .log-entry {
+      margin: 5px 0;
+      padding: 5px;
+      background: #444;
+      border-radius: 3px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Test Undo Enhancement Functionality</h1>
+    
+    <div class="history">
+      <h2>History State</h2>
+      <div id="history-display"></div>
+    </div>
+    
+    <div class="log">
+      <h2>Event Log</h2>
+      <div id="log-display"></div>
+    </div>
+    
+    <script>
+      // Simulate the enhancement history logic
+      let history = [];
+      let historyIndex = -1;
+      let hasEnhanced = false;
+      
+      function log(message) {
+        const logDisplay = document.getElementById('log-display');
+        const entry = document.createElement('div');
+        entry.className = 'log-entry';
+        entry.textContent = `[${new Date().toISOString()}] ${message}`;
+        logDisplay.appendChild(entry);
+        logDisplay.scrollTop = logDisplay.scrollHeight;
+      }
+      
+      function updateHistoryDisplay() {
+        const historyDisplay = document.getElementById('history-display');
+        historyDisplay.innerHTML = `
+          <p>History Length: ${history.length}</p>
+          <p>History Index: ${historyIndex}</p>
+          <p>Has Enhanced: ${hasEnhanced}</p>
+          <p>History Contents:</p>
+          <ul>
+            ${history.map((item, index) => `
+              <li style="${index === historyIndex ? 'color: #4ade80;' : ''}">
+                [${index}]: "${item}"
+              </li>
+            `).join('')}
+          </ul>
+        `;
+      }
+      
+      // Test scenario: User types prompt and enhances it
+      function runTest() {
+        log('Starting test scenario...');
+        
+        // Step 1: User types initial prompt
+        const initialPrompt = "create an image of a man";
+        log(`User types: "${initialPrompt}"`);
+        
+        // Step 2: User clicks enhance (first enhancement)
+        log('User clicks enhance button...');
+        
+        // First enhancement logic (from the fix)
+        if (!hasEnhanced && history.length === 0) {
+          log('First enhancement - adding original prompt to history');
+          history = [initialPrompt];
+          historyIndex = 0;
+        }
+        
+        // Simulate enhancement success
+        const enhancedPrompt = "Create an image of a man, focusing on a specific style, like:\n\n• Subject: A man\n• Style: Choose one - photorealistic, impressionistic, cartoon, watercolor painting, or cyberpunk.\n• Description: Add details about his appearance (age, hair color, clothing), and the setting or activity he is engaged in.";
+        log(`Enhancement successful: "${enhancedPrompt.substring(0, 50)}..."`);
+        
+        // Add enhanced prompt to history
+        history.push(enhancedPrompt);
+        historyIndex = history.length - 1;
+        hasEnhanced = true;
+        
+        updateHistoryDisplay();
+        log(`History now contains ${history.length} items`);
+        
+        // Step 3: User clicks undo
+        setTimeout(() => {
+          log('User clicks undo button...');
+          
+          if (historyIndex > 0) {
+            const newIndex = historyIndex - 1;
+            historyIndex = newIndex;
+            const previousVersion = history[newIndex];
+            log(`Undo successful - reverted to: "${previousVersion}"`);
+            updateHistoryDisplay();
+          } else {
+            log('Cannot undo - already at first version');
+          }
+        }, 2000);
+        
+        // Step 4: Verify result
+        setTimeout(() => {
+          log('=== VERIFICATION ===');
+          if (history[historyIndex] === initialPrompt) {
+            log('✅ SUCCESS: Undo correctly reverted to original prompt!');
+          } else {
+            log(`❌ FAILURE: Expected "${initialPrompt}" but got "${history[historyIndex]}"`);
+          }
+        }, 3000);
+      }
+      
+      // Run test on page load
+      window.onload = () => {
+        updateHistoryDisplay();
+        runTest();
+      };
+    </script>
+  </div>
+</body>
+</html>

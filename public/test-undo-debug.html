@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Undo Button Issue</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        .debug-container {
+            background-color: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .step {
+            margin: 15px 0;
+            padding: 10px;
+            background-color: #333;
+            border-radius: 4px;
+            border-left: 4px solid #6366f1;
+        }
+        .step.success {
+            border-left-color: #10b981;
+            background-color: #1a2a1a;
+        }
+        .step.error {
+            border-left-color: #ef4444;
+            background-color: #2a1a1a;
+        }
+        .step.warning {
+            border-left-color: #f59e0b;
+            background-color: #2a2a1a;
+        }
+        button {
+            background-color: #6366f1;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #5855eb;
+        }
+        button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+        .console-log {
+            background-color: #1a1a1a;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .test-instructions {
+            background-color: #2a2a2a;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .iframe-container {
+            width: 100%;
+            height: 600px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Debug Undo Button Issue</h1>
+    <p>This page helps debug the prompt enhancer undo button functionality.</p>
+
+    <div class="debug-container">
+        <h2>🎯 Test Instructions</h2>
+        <div class="test-instructions">
+            <ol>
+                <li><strong>Open the main app below</strong> (embedded iframe)</li>
+                <li><strong>Type a simple prompt</strong> like "create a cat image"</li>
+                <li><strong>Click the ✨ Enhance button</strong> and wait for completion</li>
+                <li><strong>Check the browser console</strong> for debug logs</li>
+                <li><strong>Look for the undo button</strong> (↶ icon) - it should appear after enhancement</li>
+                <li><strong>Check if the button is enabled</strong> (blue styling) or disabled (gray styling)</li>
+                <li><strong>Click the undo button</strong> if enabled</li>
+                <li><strong>Verify the original prompt is restored</strong></li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="debug-container">
+        <h2>🔍 What to Look For in Console</h2>
+        <div class="step">
+            <strong>[Prompt Enhancer] State changed:</strong> Monitor historyIndex and hasEnhanced values
+        </div>
+        <div class="step">
+            <strong>[Prompt Enhancer] State updated in addToHistory:</strong> Check if historyIndex becomes 1
+        </div>
+        <div class="step">
+            <strong>[Undo Button] Click attempt:</strong> See button state when clicked
+        </div>
+        <div class="step warning">
+            <strong>Expected after enhancement:</strong> historyIndex = 1, hasEnhanced = true, history.length = 2
+        </div>
+        <div class="step success">
+            <strong>Button should be enabled when:</strong> historyIndex > 0 && !disabled
+        </div>
+    </div>
+
+    <div class="debug-container">
+        <h2>🚀 Live Application</h2>
+        <div class="iframe-container">
+            <iframe src="http://localhost:3002" title="GeminiChatbot Application"></iframe>
+        </div>
+    </div>
+
+    <div class="debug-container">
+        <h2>📊 Expected State Flow</h2>
+        <div class="step">
+            <strong>Initial:</strong> historyIndex = -1, hasEnhanced = false, history = []
+        </div>
+        <div class="step">
+            <strong>Enhancement Start:</strong> historyIndex = 0, hasEnhanced = false, history = [originalPrompt]
+        </div>
+        <div class="step success">
+            <strong>Enhancement Success:</strong> historyIndex = 1, hasEnhanced = true, history = [originalPrompt, enhancedPrompt]
+        </div>
+        <div class="step success">
+            <strong>Button Enabled:</strong> historyIndex > 0 (1 > 0 = true) && !disabled
+        </div>
+        <div class="step">
+            <strong>After Undo:</strong> historyIndex = 0, hasEnhanced = true, history = [originalPrompt, enhancedPrompt]
+        </div>
+    </div>
+
+    <div class="debug-container">
+        <h2>🛠️ Debugging Tools</h2>
+        <button onclick="openConsole()">Open Browser Console</button>
+        <button onclick="clearConsole()">Clear Console</button>
+        <button onclick="reloadApp()">Reload App</button>
+        <button onclick="copyLogs()">Copy Debug Info</button>
+    </div>
+
+    <div class="debug-container">
+        <h2>📝 Debug Log Capture</h2>
+        <div id="logCapture" class="console-log">
+            Console logs will appear here when you interact with the app...
+        </div>
+    </div>
+
+    <script>
+        // Capture console logs
+        const originalLog = console.log;
+        const logCapture = document.getElementById('logCapture');
+        
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            
+            // Capture logs related to prompt enhancer
+            const message = args.join(' ');
+            if (message.includes('[Prompt Enhancer]') || message.includes('[Undo Button]')) {
+                const logEntry = document.createElement('div');
+                logEntry.style.marginBottom = '5px';
+                logEntry.style.padding = '5px';
+                logEntry.style.backgroundColor = '#333';
+                logEntry.style.borderRadius = '3px';
+                logEntry.textContent = new Date().toLocaleTimeString() + ': ' + message;
+                logCapture.appendChild(logEntry);
+                logCapture.scrollTop = logCapture.scrollHeight;
+            }
+        };
+
+        function openConsole() {
+            alert('Press F12 or Ctrl+Shift+I (Cmd+Option+I on Mac) to open the browser console');
+        }
+
+        function clearConsole() {
+            console.clear();
+            logCapture.innerHTML = 'Console cleared...';
+        }
+
+        function reloadApp() {
+            const iframe = document.querySelector('iframe');
+            iframe.src = iframe.src;
+        }
+
+        function copyLogs() {
+            const logs = logCapture.textContent;
+            navigator.clipboard.writeText(logs).then(() => {
+                alert('Debug logs copied to clipboard!');
+            }).catch(() => {
+                alert('Failed to copy logs. Please select and copy manually.');
+            });
+        }
+
+        // Instructions
+        console.log('🔍 Debug page loaded. Follow the test instructions above.');
+        console.log('📊 Expected flow: Initial → Enhancement Start → Enhancement Success → Button Enabled');
+        console.log('🎯 Key values to watch: historyIndex, hasEnhanced, history.length');
+    </script>
+</body>
+</html>

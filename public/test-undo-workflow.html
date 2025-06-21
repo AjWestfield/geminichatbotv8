@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Complete Undo Workflow</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        .test-container {
+            background-color: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .step {
+            margin: 15px 0;
+            padding: 15px;
+            background-color: #333;
+            border-radius: 4px;
+            border-left: 4px solid #6366f1;
+        }
+        .step.success {
+            border-left-color: #10b981;
+            background-color: #1a2a1a;
+        }
+        .step.error {
+            border-left-color: #ef4444;
+            background-color: #2a1a1a;
+        }
+        .step.warning {
+            border-left-color: #f59e0b;
+            background-color: #2a2a1a;
+        }
+        .step.current {
+            border-left-color: #3b82f6;
+            background-color: #1e3a8a;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .checklist {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .checklist-item {
+            flex: 1;
+            min-width: 300px;
+            background-color: #333;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #6366f1;
+        }
+        .checklist-item.completed {
+            border-left-color: #10b981;
+            background-color: #1a2a1a;
+        }
+        .checklist-item.failed {
+            border-left-color: #ef4444;
+            background-color: #2a1a1a;
+        }
+        .iframe-container {
+            width: 100%;
+            height: 600px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 6px;
+        }
+        button {
+            background-color: #6366f1;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #5855eb;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-pending { background-color: #6b7280; }
+        .status-success { background-color: #10b981; }
+        .status-error { background-color: #ef4444; }
+        .status-warning { background-color: #f59e0b; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Complete Undo Workflow Test</h1>
+    <p>This page provides a comprehensive test of the prompt enhancer undo functionality.</p>
+
+    <div class="test-container">
+        <h2>🎯 Test Workflow</h2>
+        <div class="step current">
+            <strong>Step 1:</strong> Type a simple prompt like "create a cat image" in the textarea below
+        </div>
+        <div class="step">
+            <strong>Step 2:</strong> Click the ✨ Enhance button and wait for completion
+        </div>
+        <div class="step">
+            <strong>Step 3:</strong> Verify the undo button (↶) appears and is enabled (blue styling)
+        </div>
+        <div class="step">
+            <strong>Step 4:</strong> Check the debug panel shows: Index: 1, History: 2, Enhanced: Y, Enabled: Y
+        </div>
+        <div class="step">
+            <strong>Step 5:</strong> Click the undo button
+        </div>
+        <div class="step">
+            <strong>Step 6:</strong> Verify original prompt is restored exactly
+        </div>
+        <div class="step">
+            <strong>Step 7:</strong> Check success toast: "✅ Undone - Reverted to previous version"
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h2>✅ Test Checklist</h2>
+        <div class="checklist">
+            <div class="checklist-item" id="check-initial">
+                <span class="status-indicator status-pending"></span>
+                <strong>Initial State</strong><br>
+                Debug panel shows: Index: -1, History: 0, Enhanced: N
+            </div>
+            <div class="checklist-item" id="check-enhancement">
+                <span class="status-indicator status-pending"></span>
+                <strong>After Enhancement</strong><br>
+                Debug panel shows: Index: 1, History: 2, Enhanced: Y, Enabled: Y
+            </div>
+            <div class="checklist-item" id="check-button">
+                <span class="status-indicator status-pending"></span>
+                <strong>Button State</strong><br>
+                Undo button is visible and has blue styling (enabled)
+            </div>
+            <div class="checklist-item" id="check-undo">
+                <span class="status-indicator status-pending"></span>
+                <strong>Undo Function</strong><br>
+                Clicking undo restores original prompt exactly
+            </div>
+            <div class="checklist-item" id="check-toast">
+                <span class="status-indicator status-pending"></span>
+                <strong>User Feedback</strong><br>
+                Success toast appears: "✅ Undone - Reverted to previous version"
+            </div>
+            <div class="checklist-item" id="check-state">
+                <span class="status-indicator status-pending"></span>
+                <strong>Final State</strong><br>
+                Debug panel shows: Index: 0, History: 2, Enhanced: Y
+            </div>
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h2>🚀 Live Application</h2>
+        <div class="iframe-container">
+            <iframe src="http://localhost:3002" title="GeminiChatbot Application"></iframe>
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h2>🔍 Expected Debug Output</h2>
+        <div class="step">
+            <strong>Initial:</strong> [Prompt Enhancer] State changed: historyIndex: -1, historyLength: 0, hasEnhanced: false
+        </div>
+        <div class="step">
+            <strong>Enhancement Start:</strong> [Prompt Enhancer] First enhancement - initializing history with original prompt
+        </div>
+        <div class="step success">
+            <strong>Enhancement Success:</strong> [Prompt Enhancer] Enhancement completed - state updated: newHistoryIndex: 1, hasEnhanced: true
+        </div>
+        <div class="step success">
+            <strong>State Update:</strong> [Prompt Enhancer] State changed: historyIndex: 1, historyLength: 2, hasEnhanced: true
+        </div>
+        <div class="step">
+            <strong>Button Click:</strong> [Undo Button] Click attempt: historyIndex: 1, isButtonDisabled: false
+        </div>
+        <div class="step success">
+            <strong>Undo Success:</strong> [Prompt Enhancer] Undo successful: fromIndex: 1, toIndex: 0
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h2>🛠️ Test Controls</h2>
+        <button onclick="resetTest()">Reset Test</button>
+        <button onclick="markStep(1)">Mark Step 1 Complete</button>
+        <button onclick="markStep(2)">Mark Step 2 Complete</button>
+        <button onclick="markStep(3)">Mark Step 3 Complete</button>
+        <button onclick="openConsole()">Open Console</button>
+        <button onclick="reloadApp()">Reload App</button>
+    </div>
+
+    <script>
+        let currentStep = 1;
+        
+        function markStep(step) {
+            const steps = document.querySelectorAll('.step');
+            steps.forEach((s, i) => {
+                s.classList.remove('current');
+                if (i < step) {
+                    s.classList.add('success');
+                } else if (i === step) {
+                    s.classList.add('current');
+                }
+            });
+            currentStep = step + 1;
+        }
+
+        function resetTest() {
+            const steps = document.querySelectorAll('.step');
+            steps.forEach((s, i) => {
+                s.classList.remove('success', 'current');
+                if (i === 0) {
+                    s.classList.add('current');
+                }
+            });
+            
+            const checkItems = document.querySelectorAll('.checklist-item');
+            checkItems.forEach(item => {
+                item.classList.remove('completed', 'failed');
+                const indicator = item.querySelector('.status-indicator');
+                indicator.className = 'status-indicator status-pending';
+            });
+            
+            currentStep = 1;
+        }
+
+        function openConsole() {
+            alert('Press F12 or Ctrl+Shift+I (Cmd+Option+I on Mac) to open the browser console');
+        }
+
+        function reloadApp() {
+            const iframe = document.querySelector('iframe');
+            iframe.src = iframe.src;
+        }
+
+        // Auto-update checklist based on console logs
+        const originalLog = console.log;
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            
+            const message = args.join(' ');
+            
+            // Check for specific log patterns and update checklist
+            if (message.includes('State changed') && message.includes('historyIndex: 1')) {
+                updateChecklistItem('check-enhancement', 'success');
+            }
+            
+            if (message.includes('Undo successful')) {
+                updateChecklistItem('check-undo', 'success');
+            }
+            
+            if (message.includes('Enhancement completed')) {
+                updateChecklistItem('check-button', 'success');
+            }
+        };
+
+        function updateChecklistItem(id, status) {
+            const item = document.getElementById(id);
+            const indicator = item.querySelector('.status-indicator');
+            
+            item.classList.remove('completed', 'failed');
+            indicator.classList.remove('status-pending', 'status-success', 'status-error');
+            
+            if (status === 'success') {
+                item.classList.add('completed');
+                indicator.classList.add('status-success');
+            } else if (status === 'error') {
+                item.classList.add('failed');
+                indicator.classList.add('status-error');
+            }
+        }
+
+        console.log('🧪 Workflow test page loaded');
+        console.log('📋 Follow the test steps and watch the checklist update automatically');
+    </script>
+</body>
+</html>

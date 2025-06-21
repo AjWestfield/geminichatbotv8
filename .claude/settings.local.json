@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(npm run type-check:*)",
+      "Bash(npm run:*)",
+      "Bash(rm:*)",
+      "Bash(sed:*)",
+      "Bash(ls:*)",
+      "Bash(xattr:*)",
+      "Bash(npx tsc:*)",
+      "Bash(rg:*)",
+      "Bash(true)",
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(curl:*)",
+      "WebFetch(domain:docs.perplexity.ai)",
+      "Bash(node:*)",
+      "Bash(chmod:*)",
+      "Bash(npm install:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(pkill:*)",
+      "Bash(touch:*)"
+    ],
+    "deny": []
+  }
+}

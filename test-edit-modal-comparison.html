@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Edit Modal Comparison</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: white;
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #2a2a2a;
+            border-radius: 8px;
+        }
+        h2 {
+            color: #60a5fa;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #065f46;
+            color: #34d399;
+        }
+        .error {
+            background-color: #7f1d1d;
+            color: #f87171;
+        }
+        .info {
+            background-color: #1e3a8a;
+            color: #93c5fd;
+        }
+        code {
+            background-color: #374151;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Image Edit Modal Comparison Slider Test</h1>
+    
+    <div class="test-section">
+        <h2>Feature Overview</h2>
+        <div class="test-result info">
+            <p>The Image Edit Modal now includes a comparison feature that allows users to preview their edits before applying them.</p>
+            <p>Features added:</p>
+            <ul>
+                <li>Toggle button to show/hide comparison view</li>
+                <li>Split screen mode showing original and preview side by side</li>
+                <li>Slider mode with draggable handle for before/after comparison</li>
+                <li>Touch support for mobile devices</li>
+                <li>Smooth animations and transitions</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>Implementation Details</h2>
+        <div class="test-result success">
+            <p><strong>✓ Component Updated:</strong> <code>/components/image-edit-modal.tsx</code></p>
+            <p>Added state management for:</p>
+            <ul>
+                <li><code>showComparison</code> - Toggle comparison view</li>
+                <li><code>comparisonMode</code> - Switch between 'split' and 'slider'</li>
+                <li><code>sliderPosition</code> - Track slider handle position</li>
+                <li><code>sliderContainerRef</code> - Reference for CSS custom properties</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>CSS Integration</h2>
+        <div class="test-result success">
+            <p><strong>✓ Reused Existing CSS:</strong> The implementation uses the comparison slider CSS classes already defined in <code>app/globals.css</code></p>
+            <p>CSS classes used:</p>
+            <ul>
+                <li><code>.image-comparison-slider</code> - Main container</li>
+                <li><code>.image-comparison-clipped</code> - Clipping mask for slider</li>
+                <li><code>.image-comparison-handle</code> - Slider handle positioning</li>
+                <li><code>.slider-dragging</code> - Active drag state</li>
+                <li><code>.slider-handle</code> - Handle styling</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>User Flow</h2>
+        <div class="test-result info">
+            <p>To use the comparison feature:</p>
+            <ol>
+                <li>Open the Image Edit Modal with any image</li>
+                <li>Click "Show Comparison" button in the top right of the preview area</li>
+                <li>Choose between "Split" or "Slider" mode</li>
+                <li>In Split mode: See original and preview side by side</li>
+                <li>In Slider mode: Drag the handle to compare before/after</li>
+                <li>The preview area shows a placeholder until an actual edit preview is available</li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>Testing Instructions</h2>
+        <div class="test-result info">
+            <p>To test the feature:</p>
+            <ol>
+                <li>Generate or upload an image in the main chat</li>
+                <li>Click the "Edit" button on the image</li>
+                <li>In the edit modal, click "Show Comparison"</li>
+                <li>Try both Split and Slider modes</li>
+                <li>In Slider mode, test dragging the handle</li>
+                <li>Test on mobile devices for touch support</li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>Future Enhancements</h2>
+        <div class="test-result info">
+            <p>Potential improvements for the future:</p>
+            <ul>
+                <li>Add live preview generation as the user types their edit prompt</li>
+                <li>Support for comparing multiple edit variations</li>
+                <li>Zoom functionality for detailed comparison</li>
+                <li>Keyboard shortcuts for toggling comparison modes</li>
+                <li>Save comparison screenshots</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        console.log('Test page loaded. The Image Edit Modal now includes comparison slider functionality.');
+        console.log('Access the app at http://localhost:3002 to test the feature.');
+    </script>
+</body>
+</html>

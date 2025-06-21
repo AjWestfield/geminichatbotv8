@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Undo Functionality</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .test-section {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .state-display {
+            background: #333;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        button {
+            padding: 8px 16px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background: #4a4a4a;
+            color: white;
+        }
+        button:hover {
+            background: #5a5a5a;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .success { color: #4ade80; }
+        .error { color: #f87171; }
+        .info { color: #60a5fa; }
+    </style>
+</head>
+<body>
+    <h1>Undo Functionality Test</h1>
+    
+    <div class="test-section">
+        <h2>Test Scenario</h2>
+        <p>This page tests the undo button functionality after prompt enhancement.</p>
+        
+        <h3>Expected Behavior:</h3>
+        <ol>
+            <li>User enters a prompt</li>
+            <li>User clicks enhance button</li>
+            <li>Prompt is enhanced</li>
+            <li>Undo button becomes visible and enabled</li>
+            <li>Clicking undo restores the original prompt</li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h2>State Simulation</h2>
+        <div id="state-display" class="state-display"></div>
+        
+        <div>
+            <button onclick="simulateEnhancement()">Simulate Enhancement</button>
+            <button onclick="resetState()">Reset State</button>
+        </div>
+        
+        <div style="margin-top: 20px;">
+            <button id="undo-button" onclick="simulateUndo()" disabled>Undo (Simulated)</button>
+            <span id="undo-status"></span>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>Debug Log</h2>
+        <div id="debug-log" class="state-display"></div>
+    </div>
+
+    <script>
+        let state = {
+            hasEnhanced: false,
+            history: [],
+            historyIndex: -1,
+            value: '',
+            disabled: false
+        };
+
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('debug-log');
+            const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+            const color = type === 'error' ? 'error' : type === 'success' ? 'success' : 'info';
+            logEl.innerHTML += `<span class="${color}">[${timestamp}] ${message}</span>\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function updateDisplay() {
+            const displayEl = document.getElementById('state-display');
+            displayEl.textContent = JSON.stringify(state, null, 2);
+            
+            // Update undo button state
+            const undoButton = document.getElementById('undo-button');
+            const undoStatus = document.getElementById('undo-status');
+            
+            const shouldBeEnabled = state.hasEnhanced && state.historyIndex > 0 && !state.disabled;
+            undoButton.disabled = !shouldBeEnabled;
+            
+            if (state.hasEnhanced) {
+                undoButton.style.display = 'inline-block';
+                undoStatus.textContent = shouldBeEnabled ? '✓ Enabled' : '✗ Disabled';
+                undoStatus.className = shouldBeEnabled ? 'success' : 'error';
+            } else {
+                undoButton.style.display = 'none';
+                undoStatus.textContent = '';
+            }
+            
+            log(`State updated - Undo button should be ${shouldBeEnabled ? 'enabled' : 'disabled'}`);
+        }
+
+        function simulateEnhancement() {
+            log('Starting enhancement simulation...', 'info');
+            
+            // Simulate the enhancement process
+            const originalPrompt = 'Create a simple web page';
+            const enhancedPrompt = 'Create a responsive web page with modern CSS grid layout, semantic HTML5 elements, and mobile-first design principles';
+            
+            // Initialize history if first enhancement
+            if (!state.hasEnhanced) {
+                state.history = [originalPrompt];
+                state.historyIndex = 0;
+                log('Initialized history with original prompt', 'success');
+            }
+            
+            // Add enhanced prompt to history
+            state.history.push(enhancedPrompt);
+            state.historyIndex = state.history.length - 1;
+            state.hasEnhanced = true;
+            state.value = enhancedPrompt;
+            
+            log(`Enhancement complete - historyIndex: ${state.historyIndex}, history length: ${state.history.length}`, 'success');
+            
+            updateDisplay();
+        }
+
+        function simulateUndo() {
+            if (state.historyIndex > 0) {
+                state.historyIndex--;
+                state.value = state.history[state.historyIndex];
+                log(`Undo performed - restored to: "${state.value}"`, 'success');
+                updateDisplay();
+            } else {
+                log('Cannot undo - already at original version', 'error');
+            }
+        }
+
+        function resetState() {
+            state = {
+                hasEnhanced: false,
+                history: [],
+                historyIndex: -1,
+                value: '',
+                disabled: false
+            };
+            log('State reset to initial values', 'info');
+            updateDisplay();
+        }
+
+        // Initial display
+        updateDisplay();
+        log('Test page loaded - ready to simulate enhancement', 'info');
+    </script>
+</body>
+</html>

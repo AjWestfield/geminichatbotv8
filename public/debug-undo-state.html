@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Undo State</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        .debug-container {
+            background-color: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .state-item {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #333;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .state-item.error {
+            background-color: #4a1a1a;
+            border-left: 4px solid #ef4444;
+        }
+        .state-item.success {
+            background-color: #1a4a1a;
+            border-left: 4px solid #10b981;
+        }
+        .state-item.warning {
+            background-color: #4a4a1a;
+            border-left: 4px solid #f59e0b;
+        }
+        button {
+            background-color: #6366f1;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #5855eb;
+        }
+        .iframe-container {
+            width: 100%;
+            height: 400px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🐛 Debug Undo Button State</h1>
+    <p>This page helps debug why the undo button is disabled after prompt enhancement.</p>
+
+    <div class="debug-container">
+        <h2>🔍 State Inspector</h2>
+        <div id="stateDisplay">
+            <p>Click "Check State" to inspect the current undo button state...</p>
+        </div>
+        <button onclick="checkUndoState()">Check State</button>
+        <button onclick="clearDisplay()">Clear</button>
+    </div>
+
+    <div class="debug-container">
+        <h2>🧪 Test Application</h2>
+        <div class="iframe-container">
+            <iframe src="http://localhost:3000" title="GeminiChatbot Application"></iframe>
+        </div>
+    </div>
+
+    <div class="debug-container">
+        <h2>📋 Debug Instructions</h2>
+        <ol>
+            <li>In the app above, type a simple prompt like "create a cat image"</li>
+            <li>Click the ✨ Enhance button</li>
+            <li>Wait for enhancement to complete</li>
+            <li>Click "Check State" button above to see the current state</li>
+            <li>Look for the undo button (↶) - it should be visible but might be disabled</li>
+        </ol>
+    </div>
+
+    <script>
+        function checkUndoState() {
+            const display = document.getElementById('stateDisplay');
+            display.innerHTML = '<p>Checking state...</p>';
+            
+            // Try to access the iframe's console logs
+            const iframe = document.querySelector('iframe');
+            
+            // Check if we can access console logs from the main window
+            const logs = [];
+            
+            // Override console.log to capture logs
+            const originalLog = console.log;
+            const capturedLogs = [];
+            
+            // Display what we can check
+            let html = '<h3>State Check Results:</h3>';
+            
+            // Check if the iframe is accessible
+            try {
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                html += '<div class="state-item success">✅ Iframe accessible</div>';
+            } catch (e) {
+                html += '<div class="state-item error">❌ Iframe not accessible (CORS): ' + e.message + '</div>';
+            }
+            
+            // Instructions for manual debugging
+            html += '<div class="state-item warning">⚠️ Manual Debug Required</div>';
+            html += '<div class="state-item">Open browser DevTools (F12) and look for console logs starting with "[Prompt Enhancer]"</div>';
+            html += '<div class="state-item">Look for logs like:</div>';
+            html += '<div class="state-item">• "[Prompt Enhancer] Enhancement completed - state updated"</div>';
+            html += '<div class="state-item">• Check historyIndex value (should be > 0 for undo to work)</div>';
+            html += '<div class="state-item">• Check hasEnhanced value (should be true)</div>';
+            html += '<div class="state-item">• Check history array length (should be >= 2)</div>';
+            
+            html += '<h3>Expected State After Enhancement:</h3>';
+            html += '<div class="state-item success">historyIndex: 1 (or higher)</div>';
+            html += '<div class="state-item success">hasEnhanced: true</div>';
+            html += '<div class="state-item success">history.length: 2 (or higher)</div>';
+            html += '<div class="state-item success">Button condition: historyIndex > 0 && !disabled</div>';
+            
+            html += '<h3>Common Issues:</h3>';
+            html += '<div class="state-item error">historyIndex = 0 or -1 → Button disabled</div>';
+            html += '<div class="state-item error">hasEnhanced = false → Button not visible</div>';
+            html += '<div class="state-item error">history.length < 2 → Invalid state</div>';
+            html += '<div class="state-item error">disabled = true → Button disabled</div>';
+            
+            display.innerHTML = html;
+        }
+        
+        function clearDisplay() {
+            document.getElementById('stateDisplay').innerHTML = '<p>Click "Check State" to inspect the current undo button state...</p>';
+        }
+        
+        // Log instructions
+        console.log('🐛 Undo Button Debug Page Loaded');
+        console.log('📋 To debug the undo button:');
+        console.log('1. Enhance a prompt in the iframe above');
+        console.log('2. Look for console logs starting with "[Prompt Enhancer]"');
+        console.log('3. Check the state values in the logs');
+        console.log('4. Verify: historyIndex > 0, hasEnhanced = true, history.length >= 2');
+    </script>
+</body>
+</html>

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Prompt Enhancement</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: white;
+        }
+        .container {
+            background-color: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        textarea {
+            width: 100%;
+            height: 100px;
+            background-color: #3a3a3a;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 10px;
+            font-size: 14px;
+        }
+        button {
+            background-color: #6366f1;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 5px 0 0;
+        }
+        button:hover {
+            background-color: #5855eb;
+        }
+        button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+        .result {
+            background-color: #1e3a8a;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+        }
+        .error {
+            background-color: #dc2626;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .loading {
+            color: #fbbf24;
+        }
+    </style>
+</head>
+<body>
+    <h1>Prompt Enhancement Test</h1>
+    
+    <div class="container">
+        <h2>Test Prompt Enhancement API</h2>
+        <textarea id="promptInput" placeholder="Enter a prompt to enhance...">write a story</textarea>
+        <br>
+        <button onclick="testEnhancement()" id="enhanceBtn">Enhance Prompt</button>
+        <button onclick="clearResults()">Clear Results</button>
+        
+        <div id="results"></div>
+    </div>
+
+    <script>
+        async function testEnhancement() {
+            const promptInput = document.getElementById('promptInput');
+            const enhanceBtn = document.getElementById('enhanceBtn');
+            const results = document.getElementById('results');
+            
+            const prompt = promptInput.value.trim();
+            
+            if (!prompt) {
+                results.innerHTML = '<div class="error">Please enter a prompt</div>';
+                return;
+            }
+            
+            if (prompt.length < 2) {
+                results.innerHTML = '<div class="error">Prompt must be at least 2 characters long</div>';
+                return;
+            }
+            
+            enhanceBtn.disabled = true;
+            enhanceBtn.textContent = 'Enhancing...';
+            results.innerHTML = '<div class="loading">Enhancing prompt...</div>';
+            
+            try {
+                console.log('Sending request to enhance prompt:', prompt);
+                
+                const response = await fetch('/enhance-prompt', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        model: 'gemini',
+                        context: 'chat',
+                        regenerate: false
+                    }),
+                });
+                
+                console.log('Response status:', response.status);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+                }
+                
+                const data = await response.json();
+                console.log('Response data:', data);
+                
+                if (data.success && data.enhancedPrompt) {
+                    results.innerHTML = `
+                        <div class="result">
+                            <h3>✅ Enhancement Successful</h3>
+                            <p><strong>Original:</strong> ${data.originalPrompt}</p>
+                            <p><strong>Enhanced:</strong> ${data.enhancedPrompt}</p>
+                            <p><strong>Model:</strong> ${data.model}</p>
+                        </div>
+                    `;
+                } else {
+                    results.innerHTML = `<div class="error">Enhancement failed: ${data.error || 'Unknown error'}</div>`;
+                }
+                
+            } catch (error) {
+                console.error('Enhancement error:', error);
+                results.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            } finally {
+                enhanceBtn.disabled = false;
+                enhanceBtn.textContent = 'Enhance Prompt';
+            }
+        }
+        
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('promptInput').value = '';
+        }
+        
+        // Allow Enter key to trigger enhancement
+        document.getElementById('promptInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                testEnhancement();
+            }
+        });
+    </script>
+</body>
+</html>
