@@ -2438,6 +2438,7 @@ export default function ChatInterface({
               name: selectedFile.file.name,
               contentType: selectedFile.file.type,
               url: selectedFile.preview || '',
+              geminiFileUri: selectedFile.geminiFile?.uri, // Add geminiFileUri
               transcription: selectedFile.transcription,
               videoThumbnail: selectedFile.videoThumbnail,
               videoDuration: selectedFile.videoDuration
@@ -2450,6 +2451,7 @@ export default function ChatInterface({
               name: file.file.name,
               contentType: file.file.type,
               url: file.preview || '',
+              geminiFileUri: file.geminiFile?.uri, // Add geminiFileUri
               transcription: file.transcription,
               videoThumbnail: file.videoThumbnail,
               videoDuration: file.videoDuration

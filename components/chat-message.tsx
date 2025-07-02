@@ -27,6 +27,7 @@ interface MessageAttachment {
   contentType: string
   url?: string
   error?: string
+  geminiFileUri?: string
   transcription?: {
     text: string
     language?: string
@@ -39,6 +40,7 @@ interface MessageAttachment {
     name: string
     contentType: string
     url?: string
+    geminiFileUri?: string
     transcription?: {
       text: string
       language?: string
@@ -607,6 +609,8 @@ function ChatMessage({
                             contentType: attachment.contentType,
                             hasUrl: !!attachment.url,
                             url: attachment.url,
+                            hasGeminiFileUri: !!attachment.geminiFileUri,
+                            geminiFileUri: attachment.geminiFileUri,
                             hasVideoThumbnail: !!attachment.videoThumbnail,
                             videoThumbnailLength: attachment.videoThumbnail?.length || 0,
                             videoDuration: attachment.videoDuration,
@@ -624,6 +628,8 @@ function ChatMessage({
                                   isInstagram: attachment.name.toLowerCase().includes('instagram'),
                                   hasUrl: !!attachment.url,
                                   url: attachment.url,
+                                  hasGeminiFileUri: !!attachment.geminiFileUri,
+                                  geminiFileUri: attachment.geminiFileUri,
                                   contentType: attachment.contentType
                                 })
 

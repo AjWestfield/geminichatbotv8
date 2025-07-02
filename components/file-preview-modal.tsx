@@ -13,6 +13,7 @@ interface FilePreviewModalProps {
     name: string
     contentType: string
     url?: string
+    geminiFileUri?: string
     prompt?: string
     transcription?: {
       text: string
@@ -72,6 +73,8 @@ export function FilePreviewModal({ isOpen, onClose, file, onAnimate, onEdit, onA
       contentType: file.contentType,
       hasUrl: !!file.url,
       url: file.url,
+      hasGeminiFileUri: !!file.geminiFileUri,
+      geminiFileUri: file.geminiFileUri,
       hasTranscription: !!file.transcription,
       transcriptionLength: file.transcription?.text?.length || 0,
       segmentCount: file.transcription?.segments?.length || 0,

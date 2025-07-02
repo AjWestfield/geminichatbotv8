@@ -25,6 +25,7 @@ interface EnhancedVideoModalProps {
   file: {
     name: string
     url?: string
+    geminiFileUri?: string
     contentType: string
     videoThumbnail?: string
     videoDuration?: number
@@ -47,6 +48,8 @@ export function EnhancedVideoModal({
         name: file.name,
         hasUrl: !!file.url,
         url: file.url,
+        hasGeminiFileUri: !!file.geminiFileUri,
+        geminiFileUri: file.geminiFileUri,
         contentType: file.contentType,
         hasVideoThumbnail: !!file.videoThumbnail,
         videoThumbnailLength: file.videoThumbnail?.length || 0,
