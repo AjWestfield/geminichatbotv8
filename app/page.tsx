@@ -295,9 +295,6 @@ export default function Home() {
 
         // Convert database messages to chat interface format and extract attachments
         const formattedMessages = chatData.messages.map((msg: any, index: number) => {
-          // Only include attachments for the last 2 messages to avoid expired Gemini file issues
-          const isRecent = index >= chatData.messages.length - 2;
-          
           const formattedMsg: any = {
             id: msg.id,
             role: msg.role,
@@ -307,13 +304,17 @@ export default function Home() {
             metadata: msg.metadata || {}
           };
           
-          // Only include experimental_attachments for recent messages
-          // This prevents expired Gemini file URIs from being sent with new messages
-          if (isRecent && msg.attachments && msg.attachments.length > 0) {
-            formattedMsg.experimental_attachments = msg.attachments;
-            console.log('[PAGE] Including attachments for recent message:', msg.id, 'index:', index, 'of', chatData.messages.length);
-          } else if (msg.attachments && msg.attachments.length > 0) {
-            console.log('[PAGE] Excluding attachments for historical message to prevent expired Gemini URIs:', msg.id, 'index:', index);
+          // CRITICAL FIX: Never include experimental_attachments when loading from history
+          // The Vercel AI SDK sends ALL messages (with their attachments) on every API call
+          // This causes expired Gemini file URIs to be sent, resulting in "File is not in an ACTIVE state" errors
+          // Attachments should only be added to NEW messages when files are actively uploaded
+          if (msg.attachments && msg.attachments.length > 0) {
+            console.log('[PAGE] Excluding ALL attachments from loaded message to prevent expired Gemini file errors:', {
+              messageId: msg.id,
+              index: index,
+              attachmentCount: msg.attachments.length,
+              attachmentNames: msg.attachments.map((a: any) => a.name || 'unnamed')
+            });
           }
           
           return formattedMsg;

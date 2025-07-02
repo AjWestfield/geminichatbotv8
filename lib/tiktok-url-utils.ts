@@ -258,6 +258,13 @@ export function createFileFromTikTokDownload(downloadResult: any, videoTitle: st
     value: true,
     writable: false
   })
+  
+  // Add upload timestamp for tracking freshness
+  Object.defineProperty(mockFile, 'uploadTimestamp', {
+    value: Date.now(),
+    writable: false,
+    enumerable: true
+  })
 
   // Add video thumbnail if available
   if (downloadResult.thumbnail) {

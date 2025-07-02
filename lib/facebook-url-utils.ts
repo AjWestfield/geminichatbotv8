@@ -309,7 +309,7 @@ export function createFileFromFacebookDownload(downloadResult: any, mediaTitle: 
     configurable: true
   })
   
-  // Add timestamp to track when this file was created
+  // Add upload timestamp for tracking freshness
   Object.defineProperty(mockFile, 'uploadTimestamp', {
     value: Date.now(),
     writable: false,

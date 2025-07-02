@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Video Analyze Fix</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .test-section {
+            background: #f4f4f4;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        .step {
+            margin: 10px 0;
+            padding: 10px;
+            background: white;
+            border-left: 4px solid #007bff;
+        }
+        .code {
+            background: #f0f0f0;
+            padding: 10px;
+            font-family: monospace;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Video Analyze/Reverse Engineer Fix Test Guide</h1>
+    
+    <div class="test-section">
+        <h2>Test Scenario 1: YouTube Video Download</h2>
+        <div class="step">
+            <h3>Step 1: Download a YouTube Video</h3>
+            <p>Enter a YouTube URL in the chat, for example:</p>
+            <div class="code">https://www.youtube.com/watch?v=dQw4w9WgXcQ</div>
+        </div>
+        <div class="step">
+            <h3>Step 2: Wait for Download</h3>
+            <p>The video should download and appear in the chat with a thumbnail.</p>
+        </div>
+        <div class="step">
+            <h3>Step 3: Click on the Video</h3>
+            <p>Click on the video thumbnail to open the preview modal.</p>
+        </div>
+        <div class="step">
+            <h3>Step 4: Select Analyze</h3>
+            <p>Click the "Analyze" button in the preview modal.</p>
+        </div>
+        <div class="step">
+            <h3>Expected Result</h3>
+            <p class="success">✓ Gemini should analyze the video content without asking for the file</p>
+            <p class="error">✗ If Gemini says "I need you to provide the video file", the fix didn't work</p>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Scenario 2: Instagram Video Download</h2>
+        <div class="step">
+            <h3>Step 1: Download an Instagram Video</h3>
+            <p>Enter an Instagram video URL in the chat.</p>
+        </div>
+        <div class="step">
+            <h3>Step 2: Test Reverse Engineer</h3>
+            <p>After download, click the video and select "Reverse Engineer".</p>
+        </div>
+        <div class="step">
+            <h3>Expected Result</h3>
+            <p class="success">✓ Gemini should provide a complete breakdown with transcription</p>
+            <p class="error">✗ If Gemini asks for the video file, check the console logs</p>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>Console Debugging</h2>
+        <p>Open browser DevTools (F12) and check for these log messages:</p>
+        <div class="code">
+[handleFilePreviewOptionSelect] Option selected: analyze<br>
+[handleFilePreviewOptionSelect] Using geminiFileUri from attachment: https://...<br>
+[handleFilePreviewOptionSelect] Extracted Gemini URI from proxy URL: https://...<br>
+[handleFilePreviewOptionSelect] Submitting analysis request for: video.mp4 with Gemini URI: https://...
+        </div>
+        <p>These logs indicate the fix is working correctly.</p>
+    </div>
+
+    <div class="test-section">
+        <h2>Common Issues</h2>
+        <ul>
+            <li><strong>File expired:</strong> Gemini files expire after 48 hours. Re-download the video.</li>
+            <li><strong>No thumbnail:</strong> Some videos may not have thumbnails but should still analyze correctly.</li>
+            <li><strong>Proxy URL issues:</strong> Check if the Gemini URI is being extracted correctly from the proxy URL.</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>What Was Fixed</h2>
+        <ul>
+            <li>✓ Video files are now properly attached when using Analyze/Reverse Engineer</li>
+            <li>✓ Original Gemini URIs are preserved throughout the attachment lifecycle</li>
+            <li>✓ Proxy URLs are correctly converted back to Gemini URIs</li>
+            <li>✓ File selection state is properly set before submission</li>
+        </ul>
+    </div>
+</body>
+</html>

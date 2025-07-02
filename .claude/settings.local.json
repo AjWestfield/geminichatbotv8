@@ -68,7 +68,9 @@
       "Bash(source .env.local)",
       "Bash(export ZAPIER_MCP_SERVER_URL ZAPIER_MCP_API_KEY)",
       "Bash(yt-dlp:*)",
-      "Bash(pip3 install:*)"
+      "Bash(pip3 install:*)",
+      "Bash(brew upgrade:*)",
+      "Bash(brew link:*)"
     ],
     "deny": []
   }

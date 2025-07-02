@@ -248,6 +248,14 @@ export function createFileFromYouTubeDownload(downloadResult: any, videoTitle: s
     value: true,
     writable: false
   })
+  
+  // Add upload timestamp for tracking freshness
+  Object.defineProperty(mockFile, 'uploadTimestamp', {
+    value: Date.now(),
+    writable: false,
+    enumerable: true,
+    configurable: true
+  })
 
   // Add video thumbnail if available
   if (downloadResult.thumbnail) {

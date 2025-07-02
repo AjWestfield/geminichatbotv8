@@ -293,6 +293,14 @@ export function createFileFromInstagramDownload(downloadResult: any, mediaTitle:
     enumerable: true,
     configurable: true
   })
+  
+  // Add upload timestamp for tracking freshness
+  Object.defineProperty(mockFile, 'uploadTimestamp', {
+    value: Date.now(),
+    writable: false,
+    enumerable: true,
+    configurable: true
+  })
 
   // Add video thumbnail if available - CRITICAL FIX
   if (downloadResult.thumbnail) {

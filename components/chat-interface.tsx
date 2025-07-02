@@ -870,6 +870,9 @@ export default function ChatInterface({
   // Deep Research mode state (moved above useChatWithTools to avoid declaration order issues)
   const [isDeepResearchMode, setIsDeepResearchMode] = useState(false)
 
+  // Create a ref to track which files should be sent with the next message
+  const nextMessageFilesRef = useRef<{ fileUri?: string; fileMimeType?: string; transcription?: any; multipleFiles?: any[] } | null>(null)
+
   const { messages, input, handleInputChange, handleSubmit: originalHandleSubmit, isLoading, error, stop, ttsGenerationState, append } = useChatWithTools({
     api: "/api/chat",
     body: {
@@ -882,35 +885,11 @@ export default function ChatInterface({
         style: currentImageSettings.style,
         quality: imageQuality
       }, // Add image settings including model selection
-      // For backward compatibility, keep single file fields
-      fileUri: selectedFile?.geminiFile?.uri,
-      fileMimeType: selectedFile?.geminiFile?.mimeType,
-      transcription: selectedFile?.transcription, // Include transcription data
       chatId: chatId, // Include chat ID for persistence
       isDeepResearchMode: isDeepResearchMode, // Include deep research mode
-      // Include ALL files (both single and multiple) in multipleFiles array
-      multipleFiles: (() => {
-        const allFiles = []
-        if (selectedFile?.geminiFile) {
-          allFiles.push({
-            uri: selectedFile.geminiFile.uri,
-            mimeType: selectedFile.geminiFile.mimeType,
-            name: selectedFile.file.name,
-            transcription: selectedFile.transcription,
-            skipValidation: (selectedFile.file as any).skipValidation
-          })
-        }
-        if (selectedFiles.length > 0) {
-          allFiles.push(...selectedFiles.filter(f => f.geminiFile).map(file => ({
-            uri: file.geminiFile!.uri,
-            mimeType: file.geminiFile!.mimeType,
-            name: file.file.name,
-            transcription: file.transcription,
-            skipValidation: (file.file as any).skipValidation
-          })))
-        }
-        return allFiles.length > 0 ? allFiles : undefined
-      })(),
+      // Use the files from the ref if available, otherwise don't send any files
+      // This ensures we only send files that were explicitly added for this message
+      ...(nextMessageFilesRef.current || {})
     },
     initialMessages: initialMessages || defaultInitialMessages,
     onError: (error) => {
@@ -1304,6 +1283,7 @@ export default function ChatInterface({
           name: pendingAttachment.name,
           contentType: pendingAttachment.contentType,
           url: pendingAttachment.url,
+          geminiFileUri: pendingAttachment.geminiFileUri, // Preserve original Gemini URI
           transcription: pendingAttachment.transcription,
           videoThumbnail: pendingAttachment.videoThumbnail,
           videoDuration: pendingAttachment.videoDuration
@@ -2838,6 +2818,17 @@ export default function ChatInterface({
         }
       }
 
+      // Add uploadTimestamp to track when file was uploaded
+      // Only add if it doesn't already exist (e.g., from social media downloads)
+      if (!('uploadTimestamp' in file)) {
+        Object.defineProperty(file, 'uploadTimestamp', {
+          value: Date.now(),
+          writable: false,
+          enumerable: true,
+          configurable: true
+        });
+      }
+      
       const fileUploadData = {
         file,
         preview,
@@ -3803,6 +3794,36 @@ Please provide actionable insights that would help someone recreate a similar vi
     if (option === 'analyze') {
       // For analyze, create a specific analysis prompt for this file
       const file = filePreviewModal.file;
+      
+      // Extract the actual Gemini URI from the proxy URL if needed
+      let geminiUri = file.url;
+      
+      // Check if we have geminiFileUri directly in the file data (from attachments)
+      if ((file as any).geminiFileUri) {
+        geminiUri = (file as any).geminiFileUri;
+        console.log('[handleFilePreviewOptionSelect] Using geminiFileUri from attachment:', geminiUri);
+      } else if (file.url.startsWith('/api/video-proxy?uri=')) {
+        geminiUri = decodeURIComponent(file.url.replace('/api/video-proxy?uri=', ''));
+        console.log('[handleFilePreviewOptionSelect] Extracted Gemini URI from proxy URL:', geminiUri);
+      }
+      
+      // Create a mock file object to ensure the file is sent with the request
+      const mockFile = {
+        file: { 
+          name: file.name, 
+          type: file.contentType, 
+          size: 0 
+        },
+        preview: file.url,
+        geminiFile: { 
+          uri: geminiUri,
+          mimeType: file.contentType 
+        }
+      };
+      
+      // Set the file as selected
+      setSelectedFile(mockFile as any);
+      
       let analysisPrompt = `Please analyze this ${file.contentType.startsWith('image/') ? 'image' : 'file'}: ${file.name}. `;
 
       if (file.contentType.startsWith('image/')) {
@@ -3819,12 +3840,42 @@ Please provide actionable insights that would help someone recreate a similar vi
       handleInputChange({ target: { value: analysisPrompt } } as React.ChangeEvent<HTMLInputElement>);
 
       setTimeout(() => {
-        console.log('[handleFilePreviewOptionSelect] Submitting analysis request for:', file.name);
+        console.log('[handleFilePreviewOptionSelect] Submitting analysis request for:', file.name, 'with Gemini URI:', geminiUri);
         handleSubmitRef.current?.();
       }, 100);
     } else if (option === 'reverse-engineer') {
       // For reverse-engineer, use the same prompt as video reverse engineering
       const file = filePreviewModal.file;
+      
+      // Extract the actual Gemini URI from the proxy URL if needed
+      let geminiUri = file.url;
+      
+      // Check if we have geminiFileUri directly in the file data (from attachments)
+      if ((file as any).geminiFileUri) {
+        geminiUri = (file as any).geminiFileUri;
+        console.log('[handleFilePreviewOptionSelect] Using geminiFileUri from attachment:', geminiUri);
+      } else if (file.url.startsWith('/api/video-proxy?uri=')) {
+        geminiUri = decodeURIComponent(file.url.replace('/api/video-proxy?uri=', ''));
+        console.log('[handleFilePreviewOptionSelect] Extracted Gemini URI from proxy URL:', geminiUri);
+      }
+      
+      // Create a mock file object to ensure the file is sent with the request
+      const mockFile = {
+        file: { 
+          name: file.name, 
+          type: file.contentType, 
+          size: 0 
+        },
+        preview: file.url,
+        geminiFile: { 
+          uri: geminiUri,
+          mimeType: file.contentType 
+        }
+      };
+      
+      // Set the file as selected
+      setSelectedFile(mockFile as any);
+      
       const reverseEngineerPrompt = `Please reverse engineer this video and provide a complete breakdown including:
 
 1. **Complete Audio Transcription with Timestamps**:
@@ -3853,7 +3904,7 @@ Please analyze the entire video: ${file.name}`;
       handleInputChange({ target: { value: reverseEngineerPrompt } } as React.ChangeEvent<HTMLInputElement>);
 
       setTimeout(() => {
-        console.log('[handleFilePreviewOptionSelect] Submitting reverse engineering request for:', file.name);
+        console.log('[handleFilePreviewOptionSelect] Submitting reverse engineering request for:', file.name, 'with Gemini URI:', geminiUri);
         handleSubmitRef.current?.();
       }, 100);
     } else {
@@ -4065,6 +4116,71 @@ Please analyze the entire video: ${file.name}`;
 
 
 
+    // Set files for the next message in the ref
+    if (allFiles.length > 0) {
+      const filesToSend = allFiles.filter(f => f.geminiFile)
+      
+      if (filesToSend.length > 0) {
+        // CRITICAL: Only send files that were explicitly uploaded/downloaded for this message
+        // Filter out any files that might have lingered from previous messages
+        const freshFiles = filesToSend.filter(file => {
+          // Check if file was recently uploaded (within last 5 minutes)
+          const fileAge = (file.file as any).uploadTimestamp 
+            ? Date.now() - (file.file as any).uploadTimestamp 
+            : 0;
+          const isFresh = fileAge < 5 * 60 * 1000; // 5 minutes
+          
+          // Social media downloads have skipValidation flag
+          const isSocialMediaDownload = (file.file as any).skipValidation === true;
+          
+          if (!isFresh && !isSocialMediaDownload) {
+            console.warn('[handleSubmit] Excluding potentially expired file:', {
+              name: file.file.name,
+              age: fileAge,
+              hasSkipValidation: isSocialMediaDownload
+            });
+            return false;
+          }
+          
+          return true;
+        });
+        
+        if (freshFiles.length > 0) {
+          // Set the files that should be sent with this specific message
+          nextMessageFilesRef.current = {
+            // For backward compatibility, keep single file fields if only one file
+            fileUri: freshFiles[0]?.geminiFile?.uri,
+            fileMimeType: freshFiles[0]?.geminiFile?.mimeType,
+            transcription: freshFiles[0]?.transcription,
+            // Include ALL files in multipleFiles array
+            multipleFiles: freshFiles.map(file => ({
+              uri: file.geminiFile!.uri,
+              mimeType: file.geminiFile!.mimeType,
+              name: file.file.name,
+              transcription: file.transcription,
+              skipValidation: (file.file as any).skipValidation
+            }))
+          }
+          
+          console.log('[handleSubmit] Set fresh files for next message:', {
+            fileCount: freshFiles.length,
+            files: freshFiles.map(f => ({
+              name: f.file.name,
+              type: f.file.type,
+              hasGeminiFile: !!f.geminiFile,
+              skipValidation: (f.file as any).skipValidation
+            }))
+          })
+        } else {
+          console.warn('[handleSubmit] No fresh files to send after filtering')
+          nextMessageFilesRef.current = null
+        }
+      }
+    } else {
+      // No files to send
+      nextMessageFilesRef.current = null
+    }
+
     // Only set pendingAttachmentRef if it's not already set (from social media download)
     if (allFiles.length > 0 && !pendingAttachmentRef.current) {
       console.log('[handleSubmit] Creating pendingAttachmentRef with files:', allFiles.length)
@@ -4109,6 +4225,7 @@ Please analyze the entire video: ${file.name}`;
         name: primaryFile.file.name,
         contentType: primaryFile.file.type,
         url: getPlayableUrl(primaryFile),
+        geminiFileUri: primaryFile.geminiFile?.uri, // Preserve original Gemini URI
         transcription: primaryFile.transcription,
         videoThumbnail: primaryFile.videoThumbnail,
         videoDuration: primaryFile.videoDuration,
@@ -4116,6 +4233,7 @@ Please analyze the entire video: ${file.name}`;
           name: file.file.name,
           contentType: file.file.type,
           url: getPlayableUrl(file),
+          geminiFileUri: file.geminiFile?.uri, // Preserve original Gemini URI
           transcription: file.transcription,
           videoThumbnail: file.videoThumbnail,
           videoDuration: file.videoDuration,
@@ -4154,6 +4272,7 @@ Please analyze the entire video: ${file.name}`;
             name: primaryFile.file.name,
             contentType: primaryFile.file.type,
             url: getPlayableUrl(primaryFile),
+            geminiFileUri: primaryFile.geminiFile?.uri, // Preserve original Gemini URI
             transcription: primaryFile.transcription,
             videoThumbnail: primaryFile.videoThumbnail,
             videoDuration: primaryFile.videoDuration
@@ -4162,6 +4281,7 @@ Please analyze the entire video: ${file.name}`;
             name: file.file.name,
             contentType: file.file.type,
             url: getPlayableUrl(file),
+            geminiFileUri: file.geminiFile?.uri, // Preserve original Gemini URI
             transcription: file.transcription,
             videoThumbnail: file.videoThumbnail,
             videoDuration: file.videoDuration,
@@ -4342,6 +4462,12 @@ Please analyze the entire video: ${file.name}`;
       }
 
       originalHandleSubmit(e)
+      
+      // Clear the nextMessageFilesRef after submission to ensure the next message doesn't include these files
+      setTimeout(() => {
+        nextMessageFilesRef.current = null
+        console.log('[SUBMIT] Cleared nextMessageFilesRef after submission')
+      }, 100)
     }
 
     // Don't clear files immediately - let the useEffect handle it after message is processed

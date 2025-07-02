@@ -983,6 +983,13 @@ export function AI_Prompt({
   const handleYouTubeDownload = useCallback(async (url: string, quality: string = 'auto') => {
     if (isDownloadingYoutube) return
 
+    // Clear any existing files before starting YouTube download to prevent sending expired files
+    if (selectedFile || (selectedFiles && selectedFiles.length > 0)) {
+      console.log('[YouTube Download] Clearing existing files before download to prevent expired file errors')
+      if (onFileRemove) onFileRemove()
+      if (onAllFilesRemove) onAllFilesRemove()
+    }
+
     setIsDownloadingYoutube(true)
     setYoutubeDownloadProgress({ status: 'downloading', progress: 0, message: `Preparing to download (${quality})...` })
 
@@ -1031,7 +1038,7 @@ export function AI_Prompt({
       setIsDownloadingYoutube(false)
       setYoutubeDownloadProgress(null)
     }
-  }, [isDownloadingYoutube, onChange, value, onFileSelect, onFilesSelect, toast])
+  }, [isDownloadingYoutube, onChange, value, onFileSelect, onFilesSelect, toast, selectedFile, selectedFiles, onFileRemove, onAllFilesRemove])
 
   // Instagram URL download handler with auto-download support
   // Cookie authentication states
@@ -1040,6 +1047,13 @@ export function AI_Prompt({
 
   const handleInstagramDownload = useCallback(async (url: string, isAutoDownload = false, cookies?: string) => {
     if (isDownloadingInstagram) return
+
+    // Clear any existing files before starting Instagram download to prevent sending expired files
+    if (selectedFile || (selectedFiles && selectedFiles.length > 0)) {
+      console.log('[Instagram Download] Clearing existing files before download to prevent expired file errors')
+      if (onFileRemove) onFileRemove()
+      if (onAllFilesRemove) onAllFilesRemove()
+    }
 
     setIsDownloadingInstagram(true)
     if (isAutoDownload) {
@@ -1240,7 +1254,7 @@ export function AI_Prompt({
       setAutoDownloadInProgress(false)
       setInstagramDownloadProgress(null)
     }
-  }, [isDownloadingInstagram, onChange, value, onFileSelect, onFilesSelect, toast])
+  }, [isDownloadingInstagram, onChange, value, onFileSelect, onFilesSelect, toast, selectedFile, selectedFiles, onFileRemove, onAllFilesRemove])
 
   // Handle cookie authentication for Instagram
   const handleCookiesReady = useCallback((cookies: string) => {
@@ -1268,6 +1282,13 @@ export function AI_Prompt({
   // TikTok URL download handler
   const handleTikTokDownload = useCallback(async (url: string) => {
     if (isDownloadingTikTok) return
+
+    // Clear any existing files before starting TikTok download to prevent sending expired files
+    if (selectedFile || (selectedFiles && selectedFiles.length > 0)) {
+      console.log('[TikTok Download] Clearing existing files before download to prevent expired file errors')
+      if (onFileRemove) onFileRemove()
+      if (onAllFilesRemove) onAllFilesRemove()
+    }
 
     setIsDownloadingTikTok(true)
     setTiktokDownloadProgress({ status: 'downloading', progress: 0, message: 'Preparing to download TikTok video...' })
@@ -1317,11 +1338,18 @@ export function AI_Prompt({
       setIsDownloadingTikTok(false)
       setTiktokDownloadProgress(null)
     }
-  }, [isDownloadingTikTok, onChange, value, onFileSelect, onFilesSelect, toast])
+  }, [isDownloadingTikTok, onChange, value, onFileSelect, onFilesSelect, toast, selectedFile, selectedFiles, onFileRemove, onAllFilesRemove])
 
   // Facebook URL download handler
   const handleFacebookDownload = useCallback(async (url: string) => {
     if (isDownloadingFacebook) return
+
+    // Clear any existing files before starting Facebook download to prevent sending expired files
+    if (selectedFile || (selectedFiles && selectedFiles.length > 0)) {
+      console.log('[Facebook Download] Clearing existing files before download to prevent expired file errors')
+      if (onFileRemove) onFileRemove()
+      if (onAllFilesRemove) onAllFilesRemove()
+    }
 
     // Clear any existing Facebook URLs to ensure fresh download
     setDetectedFacebookUrls([])
@@ -1386,7 +1414,7 @@ export function AI_Prompt({
       setIsDownloadingFacebook(false)
       setFacebookDownloadProgress(null)
     }
-  }, [isDownloadingFacebook, onChange, value, onFileSelect, onFilesSelect, toast])
+  }, [isDownloadingFacebook, onChange, value, onFileSelect, onFilesSelect, toast, selectedFile, selectedFiles, onFileRemove, onAllFilesRemove])
 
 
   // Handle text change and detect YouTube and Instagram URLs
