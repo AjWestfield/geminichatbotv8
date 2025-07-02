@@ -1,5 +1,17 @@
 {
-  "servers": [],
+  "servers": [
+    {
+      "id": "zapier-mcp",
+      "name": "Zapier MCP",
+      "transportType": "http",
+      "url": "https://mcp.zapier.com/api/mcp/mcp",
+      "apiKey": "YmNhYzU2NGItNjBhMS00YTg0LThkODItNWExNmViYTIwNDNjOjdmNzk2ZTYxLWY3OWQtNGY2OC1iZDQwLWJhYWE5MWE0MzI4NQ==",
+      "env": {
+        "ZAPIER_API_KEY": "YmNhYzU2NGItNjBhMS00YTg0LThkODItNWExNmViYTIwNDNjOjdmNzk2ZTYxLWY3OWQtNGY2OC1iZDQwLWJhYWE5MWE0MzI4NQ==",
+        "ZAPIER_MCP_API_KEY": "YmNhYzU2NGItNjBhMS00YTg0LThkODItNWExNmViYTIwNDNjOjdmNzk2ZTYxLWY3OWQtNGY2OC1iZDQwLWJhYWE5MWE0MzI4NQ=="
+      }
+    }
+  ],
   "version": "1.0",
-  "lastModified": "2025-06-20T10:33:49.559Z"
+  "lastModified": "2025-07-01T07:08:39.489Z"
 }

@@ -17,6 +17,7 @@ interface PromptEnhancerProps {
   className?: string
   placeholder?: string
   onReset?: () => void
+  isNegativePrompt?: boolean
 }
 
 export function PromptEnhancer({
@@ -26,7 +27,8 @@ export function PromptEnhancer({
   context = "chat",
   disabled = false,
   className,
-  onReset
+  onReset,
+  isNegativePrompt = false
 }: PromptEnhancerProps) {
   const { toast } = useToast()
   const [history, setHistory] = useState<string[]>([])
@@ -579,14 +581,14 @@ export function PromptEnhancer({
               )}
             >
               <Sparkles className={cn("w-4 h-4", isEnhancing && "animate-spin")} />
-              Enhance
+              {isNegativePrompt ? "Avoid Suggestions" : "Enhance"}
             </Button>
           </TooltipTrigger>
           <TooltipContent>
             <div className="text-center">
-              <p className="font-medium">Enhance prompt with AI</p>
+              <p className="font-medium">{isNegativePrompt ? "Generate things to avoid" : "Enhance prompt with AI"}</p>
               <p className="text-xs opacity-75 mt-1">Keyboard: Ctrl+E</p>
-              {isEnhancing && <p className="text-xs text-purple-400 mt-1">✨ Enhancing...</p>}
+              {isEnhancing && <p className="text-xs text-purple-400 mt-1">✨ {isNegativePrompt ? "Generating..." : "Enhancing..."}</p>}
             </div>
           </TooltipContent>
         </Tooltip>

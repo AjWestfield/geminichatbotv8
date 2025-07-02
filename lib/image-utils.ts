@@ -54,26 +54,124 @@ export function generateImageId(): string {
 }
 
 /**
- * Download an image from URL
+ * Download an image from URL (converts to highest quality PNG)
  */
 export async function downloadImage(url: string, filename: string): Promise<void> {
   try {
-    const response = await fetch(url)
-    const blob = await response.blob()
+    // Create an image element to load the image
+    const img = new Image()
+    img.crossOrigin = 'anonymous' // Enable CORS for external images
+    
+    // Create a promise to handle image loading
+    const imageLoadPromise = new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = () => reject(new Error('Failed to load image'))
+    })
+    
+    // Load the image
+    img.src = url
+    await imageLoadPromise
+    
+    // Create a canvas with the same dimensions as the image
+    const canvas = document.createElement('canvas')
+    canvas.width = img.naturalWidth
+    canvas.height = img.naturalHeight
+    
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      throw new Error('Failed to get canvas context')
+    }
+    
+    // Draw the image onto the canvas
+    ctx.drawImage(img, 0, 0)
+    
+    // Convert canvas to blob with highest quality PNG
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            resolve(blob)
+          } else {
+            reject(new Error('Failed to create blob'))
+          }
+        },
+        'image/png',
+        1.0 // Maximum quality
+      )
+    })
+    
+    // Sanitize filename: remove special characters, limit length
+    const sanitizedFilename = filename
+      .replace(/[^a-zA-Z0-9\s-]/g, '') // Remove special characters
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .toLowerCase()
+      .substring(0, 100) // Limit length
+      .replace(/^-+|-+$/g, '') // Remove leading and trailing hyphens
+    
+    // Create timestamp for uniqueness
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19)
+    
+    // Construct final filename with PNG extension
+    const finalFilename = `${sanitizedFilename}-${timestamp}.png`
+    
     const downloadUrl = URL.createObjectURL(blob)
 
     const a = document.createElement('a')
     a.href = downloadUrl
-    a.download = filename
+    a.download = finalFilename
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
 
     // Clean up
     setTimeout(() => URL.revokeObjectURL(downloadUrl), 100)
+    
+    console.log(`[Image Download] Downloaded as high-quality PNG: ${finalFilename} (${img.naturalWidth}x${img.naturalHeight})`)
   } catch (error) {
     console.error('Failed to download image:', error)
-    throw new Error('Failed to download image')
+    
+    // Fallback to direct download if canvas conversion fails (e.g., CORS issues)
+    try {
+      console.log('[Image Download] Falling back to direct download due to:', error)
+      const response = await fetch(url)
+      const blob = await response.blob()
+      
+      // Detect actual MIME type from blob
+      const mimeType = blob.type || 'image/jpeg'
+      const extensionMap: Record<string, string> = {
+        'image/jpeg': '.jpg',
+        'image/jpg': '.jpg',
+        'image/png': '.png',
+        'image/gif': '.gif',
+        'image/webp': '.webp'
+      }
+      const extension = extensionMap[mimeType] || '.jpg'
+      
+      // Still sanitize filename
+      const sanitizedFilename = filename
+        .replace(/[^a-zA-Z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .toLowerCase()
+        .substring(0, 100)
+        .replace(/^-+|-+$/g, '')
+      
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19)
+      const finalFilename = `${sanitizedFilename}-${timestamp}${extension}`
+      
+      const downloadUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = downloadUrl
+      a.download = finalFilename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      
+      setTimeout(() => URL.revokeObjectURL(downloadUrl), 100)
+      console.log(`[Image Download] Fallback download completed: ${finalFilename} (Original format: ${mimeType})`)
+    } catch (fallbackError) {
+      console.error('[Image Download] Fallback also failed:', fallbackError)
+      throw new Error('Failed to download image')
+    }
   }
 }
 
@@ -583,10 +681,11 @@ export function saveGeneratedImages(images: GeneratedImage[]): void {
         geminiUri: img.geminiUri,
         // Save multi-edit specific fields
         isMultiImageEdit: img.isMultiImageEdit,
+        isMultiImageComposition: img.isMultiImageComposition,
         sourceImages: img.sourceImages,
-        inputImages: img.inputImages ? img.inputImages.map(url =>
-          url.startsWith('data:') ? '[DATA_URL_REMOVED]' : url.substring(0, 200)
-        ) : undefined,
+        // For inputImages, don't save data URLs but keep the array structure
+        // The actual URLs will be restored from the database when loading
+        inputImages: img.isMultiImageEdit || img.isMultiImageComposition ? [] : undefined,
       }
     })
 
@@ -684,6 +783,7 @@ export function loadGeneratedImages(): GeneratedImage[] {
           isGenerating: false, // Loaded images are never generating
           // Restore multi-edit fields
           isMultiImageEdit: img.isMultiImageEdit,
+          isMultiImageComposition: img.isMultiImageComposition,
           sourceImages: img.sourceImages,
           inputImages: img.inputImages,
           isUploaded: img.isUploaded,
@@ -811,6 +911,36 @@ export function formatImageTimestamp(date: Date | undefined | null): string {
     return `${minutes} minute${minutes > 1 ? 's' : ''} ago`
   }
   return 'Just now'
+}
+
+/**
+ * Delete a specific image from localStorage by ID
+ */
+export function deleteImageFromLocalStorage(imageId: string): boolean {
+  try {
+    const stored = localStorage.getItem('generatedImages')
+    if (!stored) {
+      console.log('[localStorage] No images found')
+      return false
+    }
+
+    const images = JSON.parse(stored)
+    const filteredImages = images.filter((img: any) => img.id !== imageId)
+
+    // If no images were removed, the image wasn't found
+    if (images.length === filteredImages.length) {
+      console.log('[localStorage] Image not found:', imageId)
+      return false
+    }
+
+    // Save the filtered images back to localStorage
+    localStorage.setItem('generatedImages', JSON.stringify(filteredImages))
+    console.log('[localStorage] Successfully deleted image:', imageId)
+    return true
+  } catch (error) {
+    console.error('[localStorage] Error deleting image:', error)
+    return false
+  }
 }
 
 /**

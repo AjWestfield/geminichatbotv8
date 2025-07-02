@@ -5,11 +5,52 @@ import { MCP_SYSTEM_PROMPT_ENHANCED, MCP_AGENT_INSTRUCTIONS_ENHANCED } from '@/l
 import { VideoGenerationHandler } from '@/lib/video-generation-handler';
 
 export async function handleClaudeRequest(
-  messages: any[]
+  messages: any[],
+  fileUri?: string,
+  fileMimeType?: string,
+  multipleFiles?: any[]
 ) {
   try {
     console.log('[Claude Handler] Processing request for Claude Sonnet 4');
     console.log('[Claude Handler] Messages count:', messages.length);
+    
+    // Check if files are being sent for analysis
+    if (fileUri || (multipleFiles && multipleFiles.length > 0)) {
+      // Check if any files are videos
+      const hasVideoFiles = multipleFiles?.some(file => file.mimeType?.startsWith('video/')) || 
+                           fileMimeType?.startsWith('video/');
+      
+      if (hasVideoFiles) {
+        console.log('[Claude Handler] Video file detected - Claude Sonnet 4 cannot analyze videos');
+        
+        const errorMessage = "Claude Sonnet 4 cannot analyze video files. Please use one of the Gemini models (gemini-2.0-flash, gemini-2.5-flash-preview-05-20, or gemini-2.5-pro-preview-06-05) for video analysis and reverse engineering.";
+        
+        // Return error in streaming format
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(`0:${JSON.stringify(errorMessage)}\n`));
+            controller.enqueue(encoder.encode(`d:{"finishReason":"stop"}\n`));
+            controller.close();
+          }
+        });
+        
+        return new Response(stream, {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          }
+        });
+      }
+      
+      // Log audio files (which are allowed)
+      const hasAudioFiles = multipleFiles?.some(file => file.mimeType?.startsWith('audio/')) || 
+                           fileMimeType?.startsWith('audio/');
+      if (hasAudioFiles) {
+        console.log('[Claude Handler] Audio file detected - Claude Sonnet 4 can analyze audio files');
+      }
+    }
     
     // Get Claude client
     const claudeClient = getClaudeClient();

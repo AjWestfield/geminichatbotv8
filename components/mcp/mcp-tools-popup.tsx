@@ -85,13 +85,16 @@ export function MCPToolsPopup({ onToolToggle, onServerToggle }: MCPToolsPopupPro
     try {
       if (newEnabled && server.status === 'disconnected') {
         await connectServer(serverId)
+        mcpState.setServerConnected(serverId, true)
       } else if (!newEnabled && server.status === 'connected') {
         await disconnectServer(serverId)
+        mcpState.setServerConnected(serverId, false)
       }
       onServerToggle?.(serverId, newEnabled)
     } catch (error) {
       // Revert on error
       mcpState.setServerEnabled(serverId, !newEnabled)
+      mcpState.setServerConnected(serverId, server.status === 'connected')
       console.error('Failed to toggle server:', error)
     }
   }
@@ -108,30 +111,21 @@ export function MCPToolsPopup({ onToolToggle, onServerToggle }: MCPToolsPopupPro
     setExpandedServers(prev => ({ ...prev, [serverId]: !prev[serverId] }))
   }
 
-  // Auto-connect enabled servers on component mount
+  // Sync connection state when popup opens or servers change
   useEffect(() => {
-    const connectEnabledServers = async () => {
-      for (const server of servers) {
-        const serverState = mcpState.servers[server.id]
-        const isEnabled = serverState?.enabled ?? false
-        
-        // If server is enabled but not connected, connect it
-        if (isEnabled && server.status === 'disconnected') {
-          try {
-            console.log(`[MCPToolsPopup] Auto-connecting enabled server: ${server.name}`)
-            await connectServer(server.id)
-          } catch (error) {
-            console.error(`[MCPToolsPopup] Failed to auto-connect ${server.name}:`, error)
-          }
-        }
-      }
-    }
-    
-    // Only run when popup opens
     if (open && servers.length > 0) {
-      connectEnabledServers()
+      // Update the MCP state to reflect actual server connection status
+      servers.forEach(server => {
+        const isConnected = server.status === 'connected'
+        const currentState = mcpState.servers[server.id]
+        
+        // Only update if state doesn't match actual connection status
+        if (currentState && currentState.connected !== isConnected) {
+          mcpState.setServerConnected(server.id, isConnected)
+        }
+      })
     }
-  }, [open, servers.length]) // Don't include servers array to avoid infinite loops
+  }, [open, servers]) // Update when servers change
 
   return (
     <>
@@ -175,7 +169,7 @@ export function MCPToolsPopup({ onToolToggle, onServerToggle }: MCPToolsPopupPro
             <h3 className="text-base font-semibold text-white">MCP Tools</h3>
           </div>
           <Badge variant="secondary" className="text-sm bg-[#5A5A5A] text-white border-0 px-3 py-1">
-            {totalEnabledTools + potentialTools} enabled{isConnecting && ' (connecting...)'}
+            {isConnecting ? 'connecting...' : `${totalEnabledTools + potentialTools} enabled`}
           </Badge>
         </div>
 

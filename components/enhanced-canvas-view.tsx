@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Code, ImageIcon, FileText, Eye, Monitor, Video, Music, Bot, User, Sparkles, Brain } from "lucide-react"
 import { EnhancedBrowserView } from "@/components/enhanced-browser-view"
+import { IntegratedBrowserTab } from "@/components/integrated-browser-tab"
 import { CredentialDialog } from "@/components/credential-dialog"
 import { ImageGallery } from "@/components/image-gallery"
 import { GeneratedImage } from "@/lib/image-utils"
@@ -233,12 +234,9 @@ export function EnhancedCanvasView({
                 </motion.div>
               )}
 
-              <EnhancedBrowserView
-                sessionId={browserSessionId}
-                onSessionChange={handleBrowserSessionChange}
-                agentMode={browserMode === 'agent'}
-                onModeChange={handleBrowserModeChange}
-                onCredentialRequest={handleCredentialRequest}
+              {/* Browser tab - ready for new implementation */}
+              <IntegratedBrowserTab
+                defaultMethod="cloud"
                 className="h-full"
               />
             </div>

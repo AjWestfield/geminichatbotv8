@@ -12,6 +12,14 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { MCPToolsPopup } from "@/components/mcp/mcp-tools-popup"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useToast } from "@/components/ui/use-toast"
+import { detectYouTubeUrl, downloadYouTubeVideo, createFileFromYouTubeDownload, getDisplayTitleFromUrl, extractYouTubeUrls, type YoutubeDownloadProgress } from "@/lib/youtube-url-utils"
+import { detectInstagramUrl, downloadInstagramMedia, createFileFromInstagramDownload, getDisplayTitleFromUrl as getInstagramDisplayTitle, extractInstagramUrls, type InstagramDownloadProgress } from "@/lib/instagram-url-utils"
+import { detectTikTokUrl, downloadTikTokVideo, createFileFromTikTokDownload, getDisplayTitleFromUrl as getTikTokDisplayTitle, extractTikTokUrls, type TikTokDownloadProgress } from "@/lib/tiktok-url-utils"
+import { detectFacebookUrl, downloadFacebookMedia, createFileFromFacebookDownload, getDisplayTitleFromUrl as getFacebookDisplayTitle, extractFacebookUrls, type FacebookDownloadProgress } from "@/lib/facebook-url-utils"
+import { useYouTubeSettings } from "@/lib/contexts/settings-context"
+import { InstagramPreview } from "./instagram-preview"
+import { CookieManager } from "@/components/cookie-manager"
+import { InlineVideoOptions } from "@/components/inline-video-options"
 
 interface UseAutoResizeTextareaProps {
   minHeight: number
@@ -203,6 +211,28 @@ export function AI_Prompt({
   const [isProgrammaticUpdate, setIsProgrammaticUpdate] = useState(false)
   const [isEnhanced, setIsEnhanced] = useState(false)
 
+  // YouTube download state
+  const [youtubeDownloadProgress, setYoutubeDownloadProgress] = useState<YoutubeDownloadProgress | null>(null)
+  const [isDownloadingYoutube, setIsDownloadingYoutube] = useState(false)
+  const [detectedYouTubeUrls, setDetectedYouTubeUrls] = useState<Array<{url: string, videoId: string}>>([]) // Track detected URLs without auto-downloading
+
+  // Instagram download state
+  const [instagramDownloadProgress, setInstagramDownloadProgress] = useState<InstagramDownloadProgress | null>(null)
+  const [isDownloadingInstagram, setIsDownloadingInstagram] = useState(false)
+  const [detectedInstagramUrls, setDetectedInstagramUrls] = useState<Array<{url: string, mediaId: string, type: string}>>([]) // Track detected Instagram URLs
+  const [autoDownloadInProgress, setAutoDownloadInProgress] = useState(false) // Track auto-download state
+  const [instagramPreviews, setInstagramPreviews] = useState<Array<{url: string, mediaId: string, type: string}>>([]) // Track Instagram previews
+
+  // TikTok download state
+  const [tiktokDownloadProgress, setTiktokDownloadProgress] = useState<TikTokDownloadProgress | null>(null)
+  const [isDownloadingTikTok, setIsDownloadingTikTok] = useState(false)
+  const [detectedTikTokUrls, setDetectedTikTokUrls] = useState<Array<{url: string, videoId?: string, username?: string}>>([]) // Track detected TikTok URLs
+
+  // Facebook download state
+  const [facebookDownloadProgress, setFacebookDownloadProgress] = useState<FacebookDownloadProgress | null>(null)
+  const [isDownloadingFacebook, setIsDownloadingFacebook] = useState(false)
+  const [detectedFacebookUrls, setDetectedFacebookUrls] = useState<Array<{url: string, videoId?: string, type?: string}>>([]) // Track detected Facebook URLs
+
   // Hooks that depend on state
   const { textareaRef, adjustHeight } = useAutoResizeTextarea({
     minHeight: 80,
@@ -210,6 +240,7 @@ export function AI_Prompt({
     onEnhancedChange: setIsEnhanced,
   })
   const { toast } = useToast()
+  const { settings: youtubeSettings } = useYouTubeSettings()
 
   const AI_MODELS = ["gemini-2.0-flash", "gemini-2.5-pro-preview-06-05", "gemini-2.5-flash-preview-05-20", "Claude Sonnet 4"]
 
@@ -347,7 +378,7 @@ export function AI_Prompt({
 
   // Note: History initialization is now handled only during enhancement process
   // to avoid race conditions and conflicting state management
-  
+
   // Debug effect to monitor state changes
   useEffect(() => {
     console.log('[Prompt Enhancer] State changed:', {
@@ -408,7 +439,7 @@ export function AI_Prompt({
 
     // Store the original prompt before enhancement
     const originalText = value.trim()
-    
+
     // Initialize history properly for first enhancement
     if (!hasEnhanced) {
       console.log('[Prompt Enhancer] First enhancement - initializing history with original prompt')
@@ -479,7 +510,7 @@ export function AI_Prompt({
         setHistory(newHistory)
         setHistoryIndex(newHistoryIndex)
         setHasEnhanced(true)
-        
+
         // Force immediate state update check
         const stateUpdateCheck = () => {
           console.log('[Prompt Enhancer] Enhancement completed - state updated:', {
@@ -492,7 +523,7 @@ export function AI_Prompt({
             expectedUndoEnabled: newHistoryIndex > 0
           })
         }
-        
+
         // Call immediately
         stateUpdateCheck()
 
@@ -948,11 +979,692 @@ export function AI_Prompt({
     }
   }, [onFileSelect, onFilesSelect])
 
+  // YouTube URL download handler
+  const handleYouTubeDownload = useCallback(async (url: string, quality: string = 'auto') => {
+    if (isDownloadingYoutube) return
+
+    setIsDownloadingYoutube(true)
+    setYoutubeDownloadProgress({ status: 'downloading', progress: 0, message: `Preparing to download (${quality})...` })
+
+    try {
+      const result = await downloadYouTubeVideo(url, (progress) => {
+        setYoutubeDownloadProgress(progress)
+      }, quality)
+
+      // Create a file object compatible with existing upload system
+      const videoTitle = result.file.displayName || getDisplayTitleFromUrl(url)
+      const mockFile = createFileFromYouTubeDownload(result, videoTitle)
+
+      // Add the downloaded video directly to the file list (like Instagram does)
+      if (onFileSelect) {
+        onFileSelect(mockFile)
+      } else if (onFilesSelect) {
+        onFilesSelect([mockFile])
+      }
+
+      // Clear the YouTube URL from input after successful download
+      onChange(value.replace(url, '').trim())
+      
+      // Clear detected YouTube URLs to hide the detection UI
+      setDetectedYouTubeUrls([])
+
+      // Show success message with video title
+      if (toast) {
+        toast({
+          title: "✅ Video Downloaded",
+          description: `"${videoTitle}" has been added to your files`,
+          duration: 3000,
+        })
+      }
+
+    } catch (error) {
+      console.error('YouTube download failed:', error)
+      if (toast) {
+        toast({
+          title: "❌ Download Failed",
+          description: error instanceof Error ? error.message : "Failed to download YouTube video",
+          variant: "destructive",
+          duration: 5000,
+        })
+      }
+    } finally {
+      setIsDownloadingYoutube(false)
+      setYoutubeDownloadProgress(null)
+    }
+  }, [isDownloadingYoutube, onChange, value, onFileSelect, onFilesSelect, toast])
+
+  // Instagram URL download handler with auto-download support
+  // Cookie authentication states
+  const [showCookieManager, setShowCookieManager] = useState(false)
+  const [pendingInstagramUrl, setPendingInstagramUrl] = useState<string | null>(null)
+
+  const handleInstagramDownload = useCallback(async (url: string, isAutoDownload = false, cookies?: string) => {
+    if (isDownloadingInstagram) return
+
+    setIsDownloadingInstagram(true)
+    if (isAutoDownload) {
+      setAutoDownloadInProgress(true)
+    }
+    setInstagramDownloadProgress({ status: 'downloading', progress: 0, message: 'Preparing to download Instagram media...' })
+
+    try {
+      const result = await downloadInstagramMedia(url, (progress) => {
+        setInstagramDownloadProgress(progress)
+      }, cookies ? { cookies } : undefined)
+
+      // Create a file object compatible with existing upload system
+      const mediaTitle = result.file.displayName || getInstagramDisplayTitle(url)
+      console.log('[Instagram Download] Creating file with result:', {
+        hasFile: !!result.file,
+        hasThumbnail: !!result.thumbnail,
+        thumbnailLength: result.thumbnail?.length || 0,
+        mimeType: result.file?.mimeType,
+        geminiUri: result.file?.uri,
+        fileSize: result.file?.sizeBytes
+      })
+      const mockFile = createFileFromInstagramDownload(result, mediaTitle)
+
+      // Add the downloaded media to the file list
+      console.log('[Instagram Download] Mock file created:', {
+        fileName: mockFile.name,
+        fileType: mockFile.type,
+        fileSize: mockFile.size,
+        hasVideoThumbnail: !!(mockFile as any).videoThumbnail,
+        thumbnailLength: (mockFile as any).videoThumbnail?.length || 0,
+        thumbnailDataUrl: (mockFile as any).videoThumbnail?.substring(0, 100),
+        hasGeminiFile: !!(mockFile as any).geminiFile,
+        geminiUri: (mockFile as any).geminiFile?.uri,
+        isPreUploaded: (mockFile as any).isPreUploaded
+      })
+      
+      // Additional verification for video thumbnails
+      if (mockFile.type.startsWith('video/') && !(mockFile as any).videoThumbnail) {
+        console.warn('[Instagram Download] WARNING: Video file created without thumbnail!', {
+          downloadResult: {
+            hasThumbnail: !!result.thumbnail,
+            thumbnailLength: result.thumbnail?.length || 0
+          }
+        })
+      }
+
+      // Debug the mockFile before passing it
+      console.log('[handleInstagramDownload] File before passing to onFileSelect:', {
+        name: mockFile.name,
+        type: mockFile.type,
+        hasVideoThumbnail: !!(mockFile as any).videoThumbnail,
+        thumbnailLength: (mockFile as any).videoThumbnail?.length || 0,
+        isInstagramVideo: (mockFile as any)._isInstagramVideo
+      });
+
+      if (onFileSelect) {
+        // Create a new file object that preserves all custom properties
+        const fileWithThumbnail = new File([mockFile], mockFile.name, { type: mockFile.type });
+        
+        // Copy all custom properties
+        Object.keys(mockFile).forEach(key => {
+          if (key !== 'size' && key !== 'name' && key !== 'type') {
+            (fileWithThumbnail as any)[key] = (mockFile as any)[key];
+          }
+        });
+        
+        // Explicitly copy important properties
+        if ((mockFile as any).videoThumbnail) {
+          (fileWithThumbnail as any).videoThumbnail = (mockFile as any).videoThumbnail;
+        }
+        if ((mockFile as any).geminiFile) {
+          (fileWithThumbnail as any).geminiFile = (mockFile as any).geminiFile;
+        }
+        if ((mockFile as any).isPreUploaded) {
+          (fileWithThumbnail as any).isPreUploaded = (mockFile as any).isPreUploaded;
+        }
+        if ((mockFile as any)._isInstagramVideo) {
+          (fileWithThumbnail as any)._isInstagramVideo = (mockFile as any)._isInstagramVideo;
+        }
+        
+        console.log('[handleInstagramDownload] Passing file with preserved properties:', {
+          hasVideoThumbnail: !!(fileWithThumbnail as any).videoThumbnail,
+          thumbnailLength: (fileWithThumbnail as any).videoThumbnail?.length || 0
+        });
+        
+        // Force thumbnail to be visible
+        if (fileWithThumbnail.type.startsWith('video/') && (fileWithThumbnail as any).videoThumbnail) {
+          console.log('[Instagram] Passing video with thumbnail to chat:', {
+            name: fileWithThumbnail.name,
+            thumbnailLength: (fileWithThumbnail as any).videoThumbnail.length,
+            thumbnailPreview: (fileWithThumbnail as any).videoThumbnail.substring(0, 100)
+          });
+        }
+        
+        onFileSelect(fileWithThumbnail)
+      } else if (onFilesSelect) {
+        // Similar handling for multiple files
+        const fileWithThumbnail = new File([mockFile], mockFile.name, { type: mockFile.type });
+        
+        // Copy all custom properties
+        Object.keys(mockFile).forEach(key => {
+          if (key !== 'size' && key !== 'name' && key !== 'type') {
+            (fileWithThumbnail as any)[key] = (mockFile as any)[key];
+          }
+        });
+        
+        // Explicitly copy important properties
+        if ((mockFile as any).videoThumbnail) {
+          (fileWithThumbnail as any).videoThumbnail = (mockFile as any).videoThumbnail;
+        }
+        if ((mockFile as any).geminiFile) {
+          (fileWithThumbnail as any).geminiFile = (mockFile as any).geminiFile;
+        }
+        if ((mockFile as any).isPreUploaded) {
+          (fileWithThumbnail as any).isPreUploaded = (mockFile as any).isPreUploaded;
+        }
+        if ((mockFile as any)._isInstagramVideo) {
+          (fileWithThumbnail as any)._isInstagramVideo = (mockFile as any)._isInstagramVideo;
+        }
+        
+        onFilesSelect([fileWithThumbnail])
+      }
+
+      // Clear the Instagram URL from input after successful download
+      onChange(value.replace(url, '').trim())
+
+      // Clear detected Instagram URLs after successful download
+      setDetectedInstagramUrls([])
+
+      // Also clear any download progress immediately
+      setInstagramDownloadProgress(null)
+
+      // Show success message
+      if (toast) {
+        toast({
+          title: "✅ Instagram Media Downloaded",
+          description: `"${mediaTitle}" has been added to your files`,
+          duration: 3000,
+        })
+      }
+
+    } catch (error: any) {
+      console.error('Instagram download failed:', error)
+
+      // Check for authentication error response
+      if (error.message === 'AUTHENTICATION_REQUIRED' || 
+          (error.response && error.response.status === 401) ||
+          error.message.includes('This content is private or requires authentication')) {
+        // Store the URL and show cookie manager
+        setPendingInstagramUrl(url)
+        setShowCookieManager(true)
+        
+        if (toast) {
+          toast({
+            title: "🔒 Authentication Required",
+            description: "This content requires Instagram login. Please provide your cookies.",
+            duration: 5000,
+          })
+        }
+      } else {
+        // Enhanced error handling with specific messages
+        let errorTitle = "❌ Download Failed"
+        let errorDescription = "Failed to download Instagram media"
+
+        if (error instanceof Error) {
+          if (error.message.includes('rate') || error.message.includes('429')) {
+            errorTitle = "⏱️ Rate Limited"
+            errorDescription = "Too many requests. Please try again in a few minutes"
+          } else if (error.message.includes('not found') || error.message.includes('404')) {
+            errorTitle = "🔍 Content Not Found"
+            errorDescription = "The Instagram post, reel, or story could not be found"
+          } else if (error.message.includes('timeout')) {
+            errorTitle = "⏰ Download Timeout"
+            errorDescription = "The download took too long. Please try again"
+          } else if (error.message.includes('network')) {
+            errorTitle = "🌐 Network Error"
+            errorDescription = "Unable to connect to Instagram. Check your internet connection"
+          } else if (error.message.includes('unsupported')) {
+            errorTitle = "❌ Unsupported Format"
+            errorDescription = "This type of Instagram content is not supported"
+          } else {
+            errorDescription = error.message
+          }
+        }
+
+        if (toast) {
+          toast({
+            title: errorTitle,
+            description: errorDescription,
+            variant: "destructive",
+            duration: 7000,
+          })
+        }
+      }
+    } finally {
+      setIsDownloadingInstagram(false)
+      setAutoDownloadInProgress(false)
+      setInstagramDownloadProgress(null)
+    }
+  }, [isDownloadingInstagram, onChange, value, onFileSelect, onFilesSelect, toast])
+
+  // Handle cookie authentication for Instagram
+  const handleCookiesReady = useCallback((cookies: string) => {
+    setShowCookieManager(false)
+    if (pendingInstagramUrl) {
+      // Retry the download with cookies
+      handleInstagramDownload(pendingInstagramUrl, false, cookies)
+      setPendingInstagramUrl(null)
+    }
+  }, [pendingInstagramUrl, handleInstagramDownload])
+
+  const handleCookieManagerClose = useCallback(() => {
+    setShowCookieManager(false)
+    setPendingInstagramUrl(null)
+  }, [])
+
+  // Handle Instagram preview removal
+  const handleInstagramPreviewRemove = useCallback((urlToRemove: string) => {
+    setInstagramPreviews(prev => prev.filter(preview => preview.url !== urlToRemove))
+    setDetectedInstagramUrls(prev => prev.filter(url => url.url !== urlToRemove))
+    // Also remove the URL from the input text
+    onChange(value.replace(urlToRemove, '').trim())
+  }, [onChange, value])
+
+  // TikTok URL download handler
+  const handleTikTokDownload = useCallback(async (url: string) => {
+    if (isDownloadingTikTok) return
+
+    setIsDownloadingTikTok(true)
+    setTiktokDownloadProgress({ status: 'downloading', progress: 0, message: 'Preparing to download TikTok video...' })
+
+    try {
+      const result = await downloadTikTokVideo(url, (progress) => {
+        setTiktokDownloadProgress(progress)
+      })
+
+      // Create a file object compatible with existing upload system
+      const videoTitle = result.file.displayName || getTikTokDisplayTitle(url)
+      const mockFile = createFileFromTikTokDownload(result, videoTitle)
+
+      // Add the downloaded video directly to the file list (like Instagram does)
+      if (onFileSelect) {
+        onFileSelect(mockFile)
+      } else if (onFilesSelect) {
+        onFilesSelect([mockFile])
+      }
+
+      // Clear the TikTok URL from input after successful download
+      onChange(value.replace(url, '').trim())
+      
+      // Clear detected TikTok URLs to hide the detection UI
+      setDetectedTikTokUrls([])
+
+      // Show success message with video title
+      if (toast) {
+        toast({
+          title: "✅ TikTok Video Downloaded",
+          description: `"${videoTitle}" has been added to your files`,
+          duration: 3000,
+        })
+      }
+
+    } catch (error) {
+      console.error('TikTok download failed:', error)
+      if (toast) {
+        toast({
+          title: "❌ Download Failed",
+          description: error instanceof Error ? error.message : "Failed to download TikTok video",
+          variant: "destructive",
+          duration: 5000,
+        })
+      }
+    } finally {
+      setIsDownloadingTikTok(false)
+      setTiktokDownloadProgress(null)
+    }
+  }, [isDownloadingTikTok, onChange, value, onFileSelect, onFilesSelect, toast])
+
+  // Facebook URL download handler
+  const handleFacebookDownload = useCallback(async (url: string) => {
+    if (isDownloadingFacebook) return
+
+    // Clear any existing Facebook URLs to ensure fresh download
+    setDetectedFacebookUrls([])
+    
+    setIsDownloadingFacebook(true)
+    setFacebookDownloadProgress({ status: 'downloading', progress: 0, message: 'Preparing to download Facebook video...' })
+
+    try {
+      const result = await downloadFacebookMedia(url, (progress) => {
+        setFacebookDownloadProgress(progress)
+      })
+
+      // Create a file object compatible with existing upload system
+      const videoTitle = result.file.displayName || getFacebookDisplayTitle(url)
+      const mockFile = createFileFromFacebookDownload(result, videoTitle)
+
+      // Add the downloaded video directly to the file list
+      if (onFileSelect) {
+        onFileSelect(mockFile)
+      } else if (onFilesSelect) {
+        onFilesSelect([mockFile])
+      }
+
+      // Clear the Facebook URL from input after successful download
+      onChange(value.replace(url, '').trim())
+      
+      // Clear detected Facebook URLs to hide the detection UI
+      setDetectedFacebookUrls([])
+
+      // Show success message with video title
+      if (toast) {
+        toast({
+          title: "✅ Facebook Video Downloaded",
+          description: `"${videoTitle}" has been added to your files`,
+          duration: 3000,
+        })
+      }
+
+    } catch (error) {
+      console.error('Facebook download failed:', error)
+      if (toast) {
+        // Check for authentication errors
+        if (error instanceof Error && (error.message === 'AUTHENTICATION_REQUIRED' || (error as any).requiresAuth)) {
+          // Store the URL for retry after authentication
+          setPendingInstagramUrl(url) // Reuse the same state as Instagram for now
+          setShowCookieManager(true)
+          toast({
+            title: "🔐 Authentication Required",
+            description: "This Facebook content requires login. Please provide cookies.",
+            duration: 5000,
+          })
+        } else {
+          toast({
+            title: "❌ Download Failed",
+            description: error instanceof Error ? error.message : "Failed to download Facebook video",
+            variant: "destructive",
+            duration: 5000,
+          })
+        }
+      }
+    } finally {
+      setIsDownloadingFacebook(false)
+      setFacebookDownloadProgress(null)
+    }
+  }, [isDownloadingFacebook, onChange, value, onFileSelect, onFilesSelect, toast])
+
+
+  // Handle text change and detect YouTube and Instagram URLs
+  const handleTextChange = useCallback((newValue: string) => {
+    onChange(newValue)
+
+    // Only detect YouTube URLs if the feature is enabled and auto-detection is on
+    if (youtubeSettings.enabled && youtubeSettings.autoDetectUrls) {
+      const detectedUrls = extractYouTubeUrls(newValue)
+      if (detectedUrls.length > 0) {
+        // If auto-download is enabled, trigger download immediately
+        if (youtubeSettings.autoDownload && !isDownloadingYoutube) {
+          const firstUrl = detectedUrls[0]
+          if (firstUrl.normalizedUrl || firstUrl.url) {
+            handleYouTubeDownload(firstUrl.normalizedUrl || firstUrl.url, youtubeSettings.defaultQuality)
+          }
+          // Clear detected URLs when auto-downloading
+          setDetectedYouTubeUrls([])
+        } else {
+          // Show detected URLs for manual download
+          setDetectedYouTubeUrls(detectedUrls.map(url => ({
+            url: url.normalizedUrl || url.url,
+            videoId: url.videoId || ''
+          })))
+        }
+      } else {
+        setDetectedYouTubeUrls([])
+      }
+    } else {
+      // Clear detected URLs if feature is disabled
+      setDetectedYouTubeUrls([])
+    }
+
+    // Detect Instagram URLs (using YouTube settings for now)
+    if (youtubeSettings.enabled && youtubeSettings.autoDetectUrls) {
+      const detectedInstagramUrlsInfo = extractInstagramUrls(newValue)
+      if (detectedInstagramUrlsInfo.length > 0) {
+        // If auto-download is enabled, trigger download immediately
+        if (youtubeSettings.autoDownload && !isDownloadingInstagram && !autoDownloadInProgress) {
+          const firstUrl = detectedInstagramUrlsInfo[0]
+          if (firstUrl.normalizedUrl || firstUrl.url) {
+            handleInstagramDownload(firstUrl.normalizedUrl || firstUrl.url, true)
+          }
+          // Clear detected URLs when auto-downloading
+          setDetectedInstagramUrls([])
+          setInstagramPreviews([])
+        } else if (!youtubeSettings.autoDownload) {
+          // Show Instagram previews for manual download
+          const newPreviews = detectedInstagramUrlsInfo.map(url => ({
+            url: url.normalizedUrl || url.url,
+            mediaId: url.mediaId || '',
+            type: url.type || 'post'
+          }))
+          setInstagramPreviews(newPreviews)
+          // Also keep the old detection for backward compatibility
+          setDetectedInstagramUrls(newPreviews)
+        }
+      } else {
+        setInstagramPreviews([])
+        setDetectedInstagramUrls([])
+      }
+    } else {
+      setInstagramPreviews([])
+      setDetectedInstagramUrls([])
+    }
+
+    // Detect TikTok URLs (using YouTube settings for now)
+    if (youtubeSettings.enabled && youtubeSettings.autoDetectUrls) {
+      const detectedTikTokUrlsInfo = extractTikTokUrls(newValue)
+      if (detectedTikTokUrlsInfo.length > 0) {
+        // If auto-download is enabled, trigger download immediately
+        if (youtubeSettings.autoDownload && !isDownloadingTikTok) {
+          const firstUrl = detectedTikTokUrlsInfo[0]
+          if (firstUrl.normalizedUrl || firstUrl.url) {
+            handleTikTokDownload(firstUrl.normalizedUrl || firstUrl.url)
+          }
+          // Clear detected URLs when auto-downloading
+          setDetectedTikTokUrls([])
+        } else {
+          // Show detected TikTok URLs for manual download
+          setDetectedTikTokUrls(detectedTikTokUrlsInfo.map(url => ({
+            url: url.normalizedUrl || url.url,
+            videoId: url.videoId,
+            username: url.username
+          })))
+        }
+      } else {
+        setDetectedTikTokUrls([])
+      }
+    } else {
+      setDetectedTikTokUrls([])
+    }
+
+    // Detect Facebook URLs (using YouTube settings for now)
+    if (youtubeSettings.enabled && youtubeSettings.autoDetectUrls) {
+      const detectedFacebookUrlsInfo = extractFacebookUrls(newValue)
+      if (detectedFacebookUrlsInfo.length > 0) {
+        // Before processing, remove any existing files that might be from the same Facebook video
+        // This prevents using expired file references
+        if (selectedFiles && selectedFiles.length > 0) {
+          const facebookVideoId = detectedFacebookUrlsInfo[0].videoId
+          if (facebookVideoId) {
+            const filteredFiles = selectedFiles.filter(file => 
+              !file.name.includes(facebookVideoId)
+            )
+            if (filteredFiles.length !== selectedFiles.length && onFilesSelect) {
+              console.log('[Facebook] Removing expired Facebook video file before new download')
+              onFilesSelect(filteredFiles)
+            }
+          }
+        }
+        
+        // If auto-download is enabled, trigger download immediately
+        if (youtubeSettings.autoDownload && !isDownloadingFacebook) {
+          const firstUrl = detectedFacebookUrlsInfo[0]
+          if (firstUrl.normalizedUrl || firstUrl.url) {
+            handleFacebookDownload(firstUrl.normalizedUrl || firstUrl.url)
+          }
+          // Clear detected URLs when auto-downloading
+          setDetectedFacebookUrls([])
+        } else {
+          // Show detected Facebook URLs for manual download
+          setDetectedFacebookUrls(detectedFacebookUrlsInfo.map(url => ({
+            url: url.normalizedUrl || url.url,
+            videoId: url.videoId,
+            type: url.type
+          })))
+        }
+      } else {
+        setDetectedFacebookUrls([])
+      }
+    } else {
+      setDetectedFacebookUrls([])
+    }
+  }, [onChange, youtubeSettings.enabled, youtubeSettings.autoDetectUrls, youtubeSettings.autoDownload, isDownloadingInstagram, autoDownloadInProgress, handleInstagramDownload, isDownloadingTikTok, handleTikTokDownload, isDownloadingFacebook, handleFacebookDownload])
+
   // Paste handler
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     // Call the parent onPaste handler first if provided
     onPaste?.(e)
 
+    // Check clipboard for text content that might contain YouTube or Instagram URLs (only if enabled)
+    if (youtubeSettings.enabled && youtubeSettings.autoDetectUrls) {
+      const clipboardText = e.clipboardData.getData('text')
+      if (clipboardText) {
+        // Check for YouTube URLs
+        const detectedYouTubeUrlsList = extractYouTubeUrls(clipboardText)
+        if (detectedYouTubeUrlsList.length > 0) {
+          // Check if auto-download is enabled
+          if (youtubeSettings.autoDownload) {
+            // Clear detected URLs immediately before starting download
+            setDetectedYouTubeUrls([])
+            // Auto-download the first detected YouTube URL
+            const firstUrl = detectedYouTubeUrlsList[0]
+            if (firstUrl.normalizedUrl || firstUrl.url) {
+              handleYouTubeDownload(firstUrl.normalizedUrl || firstUrl.url, youtubeSettings.defaultQuality)
+            }
+          } else {
+            // Show the detected URLs UI for manual download
+            setDetectedYouTubeUrls(prev => {
+              const newUrls = detectedYouTubeUrlsList.map(url => ({
+                url: url.normalizedUrl || url.url,
+                videoId: url.videoId || ''
+              }))
+              return [...prev, ...newUrls].filter((url, index, self) =>
+                index === self.findIndex(u => u.url === url.url)
+              ) // Remove duplicates
+            })
+          }
+        }
+
+        // Check for Instagram URLs
+        const detectedInstagramUrlsList = extractInstagramUrls(clipboardText)
+        if (detectedInstagramUrlsList.length > 0) {
+          // Check if auto-download is enabled (using YouTube settings for now)
+          if (youtubeSettings.autoDownload) {
+            // Clear detected URLs immediately before starting download
+            setDetectedInstagramUrls([])
+            // Auto-download the first detected Instagram URL
+            const firstUrl = detectedInstagramUrlsList[0]
+            if (firstUrl.normalizedUrl || firstUrl.url) {
+              handleInstagramDownload(firstUrl.normalizedUrl || firstUrl.url, true) // Pass true for auto-download
+            }
+          } else {
+            // Show Instagram previews for manual download
+            const newPreviews = detectedInstagramUrlsList.map(url => ({
+              url: url.normalizedUrl || url.url,
+              mediaId: url.mediaId || '',
+              type: url.type || 'post'
+            }))
+            setInstagramPreviews(prev => {
+              const combined = [...prev, ...newPreviews]
+              return combined.filter((url, index, self) =>
+                index === self.findIndex(u => u.url === url.url)
+              ) // Remove duplicates
+            })
+            // Also keep the old detection for backward compatibility
+            setDetectedInstagramUrls(prev => {
+              const combined = [...prev, ...newPreviews]
+              return combined.filter((url, index, self) =>
+                index === self.findIndex(u => u.url === url.url)
+              ) // Remove duplicates
+            })
+          }
+        }
+
+        // Check for TikTok URLs
+        const detectedTikTokUrlsList = extractTikTokUrls(clipboardText)
+        if (detectedTikTokUrlsList.length > 0) {
+          // Check if auto-download is enabled (using YouTube settings for now)
+          if (youtubeSettings.autoDownload) {
+            // Clear detected URLs immediately before starting download
+            setDetectedTikTokUrls([])
+            // Auto-download the first detected TikTok URL
+            const firstUrl = detectedTikTokUrlsList[0]
+            if (firstUrl.normalizedUrl || firstUrl.url) {
+              handleTikTokDownload(firstUrl.normalizedUrl || firstUrl.url)
+            }
+          } else {
+            // Show the detected URLs for manual download
+            setDetectedTikTokUrls(prev => {
+              const newUrls = detectedTikTokUrlsList.map(url => ({
+                url: url.normalizedUrl || url.url,
+                videoId: url.videoId,
+                username: url.username
+              }))
+              return [...prev, ...newUrls].filter((url, index, self) =>
+                index === self.findIndex(u => u.url === url.url)
+              ) // Remove duplicates
+            })
+          }
+        }
+
+        // Check for Facebook URLs
+        const detectedFacebookUrlsList = extractFacebookUrls(clipboardText)
+        if (detectedFacebookUrlsList.length > 0) {
+          // Before processing, remove any existing files that might be from the same Facebook video
+          // This prevents using expired file references
+          if (selectedFiles && selectedFiles.length > 0) {
+            const facebookVideoId = detectedFacebookUrlsList[0].videoId
+            if (facebookVideoId) {
+              const filteredFiles = selectedFiles.filter(file => 
+                !file.name.includes(facebookVideoId)
+              )
+              if (filteredFiles.length !== selectedFiles.length && onFilesSelect) {
+                console.log('[Facebook] Removing expired Facebook video file before new download (paste)')
+                onFilesSelect(filteredFiles)
+              }
+            }
+          }
+          
+          // Check if auto-download is enabled (using YouTube settings for now)
+          if (youtubeSettings.autoDownload) {
+            // Clear detected URLs immediately before starting download
+            setDetectedFacebookUrls([])
+            // Auto-download the first detected Facebook URL
+            const firstUrl = detectedFacebookUrlsList[0]
+            if (firstUrl.normalizedUrl || firstUrl.url) {
+              handleFacebookDownload(firstUrl.normalizedUrl || firstUrl.url)
+            }
+          } else {
+            // Show the detected URLs for manual download
+            setDetectedFacebookUrls(prev => {
+              const newUrls = detectedFacebookUrlsList.map(url => ({
+                url: url.normalizedUrl || url.url,
+                videoId: url.videoId,
+                type: url.type
+              }))
+              return [...prev, ...newUrls].filter((url, index, self) =>
+                index === self.findIndex(u => u.url === url.url)
+              ) // Remove duplicates
+            })
+          }
+        }
+      }
+    }
+
+    // Handle file pasting if no social media URL detected
     const items = Array.from(e.clipboardData.items)
     const fileItem = items.find(item => item.kind === 'file')
 
@@ -962,7 +1674,7 @@ export function AI_Prompt({
         onFileSelect(file)
       }
     }
-  }, [onFileSelect, onPaste])
+  }, [onFileSelect, onPaste, youtubeSettings.enabled, youtubeSettings.autoDetectUrls, youtubeSettings.autoDownload, youtubeSettings.defaultQuality, handleYouTubeDownload, handleInstagramDownload, handleTikTokDownload, handleFacebookDownload])
 
   return (
     <div className="w-full py-4">
@@ -1025,20 +1737,38 @@ export function AI_Prompt({
                             </>
                           ) : selectedFile.file.type.startsWith("video/") ? (
                             <>
-                              {selectedFile.videoThumbnail ? (
-                                <div className="relative w-full h-full">
-                                  <img
-                                    src={selectedFile.videoThumbnail}
-                                    alt="Video thumbnail"
-                                    className="w-full h-full object-cover"
-                                  />
-                                  <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                                    <Video className="w-4 h-4 text-white" />
+                              {(() => {
+                                // Check both locations for thumbnail
+                                const thumbnailToUse = selectedFile.videoThumbnail || (selectedFile.file as any).videoThumbnail;
+                                
+                                if (selectedFile.file.name.toLowerCase().includes('instagram')) {
+                                  console.log('[Selected Video Thumbnail Debug]', {
+                                    fileName: selectedFile.file.name,
+                                    hasSelectedFileThumbnail: !!selectedFile.videoThumbnail,
+                                    hasFileThumbnail: !!(selectedFile.file as any).videoThumbnail,
+                                    thumbnailLength: thumbnailToUse?.length || 0
+                                  });
+                                }
+                                
+                                return thumbnailToUse ? (
+                                  <div className="relative w-full h-full">
+                                    <img
+                                      src={thumbnailToUse}
+                                      alt="Video thumbnail"
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        console.error('[Selected Video Thumbnail] Failed to load');
+                                        (e.target as HTMLImageElement).style.display = 'none';
+                                      }}
+                                    />
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                                      <Video className="w-4 h-4 text-white" />
+                                    </div>
                                   </div>
-                                </div>
-                              ) : (
-                                <Video className="w-5 h-5 text-[#B0B0B0]" />
-                              )}
+                                ) : (
+                                  <Video className="w-5 h-5 text-[#B0B0B0]" />
+                                );
+                              })()}
                             </>
                           ) : (
                             <FileAudio className="w-5 h-5 text-[#B0B0B0]" />
@@ -1087,20 +1817,51 @@ export function AI_Prompt({
                             </>
                           ) : file.file.type.startsWith("video/") ? (
                             <>
-                              {file.videoThumbnail ? (
-                                <div className="relative w-full h-full">
-                                  <img
-                                    src={file.videoThumbnail}
-                                    alt="Video thumbnail"
-                                    className="w-full h-full object-cover"
-                                  />
-                                  <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                                    <Video className="w-4 h-4 text-white" />
+                              {(() => {
+                                // Debug logging for video thumbnails
+                                const hasDirectThumbnail = !!file.videoThumbnail;
+                                const hasFileThumbnail = !!(file.file as any).videoThumbnail;
+                                const thumbnailToUse = file.videoThumbnail || (file.file as any).videoThumbnail;
+                                
+                                if (file.file.name.toLowerCase().includes('instagram')) {
+                                  console.log('[Video Thumbnail Debug]', {
+                                    fileName: file.file.name,
+                                    hasDirectThumbnail,
+                                    hasFileThumbnail,
+                                    directThumbnailLength: file.videoThumbnail?.length || 0,
+                                    fileThumbnailLength: (file.file as any).videoThumbnail?.length || 0,
+                                    isInstagramVideo: (file.file as any)._isInstagramVideo,
+                                    fileObject: file
+                                  });
+                                }
+                                
+                                return thumbnailToUse ? (
+                                  <div className="relative w-full h-full">
+                                    <img
+                                      src={thumbnailToUse}
+                                      alt="Video thumbnail"
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        console.error('[Video Thumbnail] Failed to load:', {
+                                          fileName: file.file.name,
+                                          thumbnailLength: thumbnailToUse.length,
+                                          thumbnailPreview: thumbnailToUse.substring(0, 100)
+                                        });
+                                        // Hide broken image and show video icon
+                                        (e.target as HTMLImageElement).style.display = 'none';
+                                      }}
+                                      onLoad={() => {
+                                        console.log('[Video Thumbnail] Successfully loaded for:', file.file.name);
+                                      }}
+                                    />
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                                      <Video className="w-4 h-4 text-white" />
+                                    </div>
                                   </div>
-                                </div>
-                              ) : (
-                                <Video className="w-5 h-5 text-[#B0B0B0]" />
-                              )}
+                                ) : (
+                                  <Video className="w-5 h-5 text-[#B0B0B0]" />
+                                );
+                              })()}
                             </>
                           ) : (
                             <FileAudio className="w-5 h-5 text-[#B0B0B0]" />
@@ -1127,6 +1888,595 @@ export function AI_Prompt({
             </div>
           </div>
         )}
+
+        {/* YouTube download progress indicator */}
+        {youtubeDownloadProgress && (
+          <div className="mx-4 mt-2 mb-2">
+            <div className="bg-[#333333] rounded-lg p-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0">
+                  <Video className="w-4 h-4 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-sm text-[#B0B0B0] truncate">
+                      {youtubeDownloadProgress.message || 'Downloading YouTube video...'}
+                    </p>
+                    {youtubeDownloadProgress.progress !== undefined && (
+                      <span className="text-xs text-[#808080]">
+                        {Math.round(youtubeDownloadProgress.progress)}%
+                      </span>
+                    )}
+                  </div>
+                  {youtubeDownloadProgress.progress !== undefined && (
+                    <div className="w-full bg-[#2B2B2B] rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className={`h-full bg-red-500 rounded-full transition-all duration-300 ${
+                          youtubeDownloadProgress.progress === 0 ? 'w-0' :
+                          youtubeDownloadProgress.progress <= 5 ? 'w-[5%]' :
+                          youtubeDownloadProgress.progress <= 10 ? 'w-[10%]' :
+                          youtubeDownloadProgress.progress <= 15 ? 'w-[15%]' :
+                          youtubeDownloadProgress.progress <= 20 ? 'w-[20%]' :
+                          youtubeDownloadProgress.progress <= 25 ? 'w-1/4' :
+                          youtubeDownloadProgress.progress <= 30 ? 'w-[30%]' :
+                          youtubeDownloadProgress.progress <= 35 ? 'w-[35%]' :
+                          youtubeDownloadProgress.progress <= 40 ? 'w-[40%]' :
+                          youtubeDownloadProgress.progress <= 45 ? 'w-[45%]' :
+                          youtubeDownloadProgress.progress <= 50 ? 'w-1/2' :
+                          youtubeDownloadProgress.progress <= 55 ? 'w-[55%]' :
+                          youtubeDownloadProgress.progress <= 60 ? 'w-[60%]' :
+                          youtubeDownloadProgress.progress <= 65 ? 'w-[65%]' :
+                          youtubeDownloadProgress.progress <= 70 ? 'w-[70%]' :
+                          youtubeDownloadProgress.progress <= 75 ? 'w-3/4' :
+                          youtubeDownloadProgress.progress <= 80 ? 'w-[80%]' :
+                          youtubeDownloadProgress.progress <= 85 ? 'w-[85%]' :
+                          youtubeDownloadProgress.progress <= 90 ? 'w-[90%]' :
+                          youtubeDownloadProgress.progress <= 95 ? 'w-[95%]' :
+                          'w-full'
+                        }`}
+                        aria-valuenow={youtubeDownloadProgress.progress}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        role="progressbar"
+                      />
+                    </div>
+                  )}
+                  {youtubeDownloadProgress.status === 'error' && youtubeDownloadProgress.error && (
+                    <p className="text-xs text-red-400 mt-1">
+                      {youtubeDownloadProgress.error}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* YouTube URL detection and download prompt */}
+        {detectedYouTubeUrls.length > 0 && !isDownloadingYoutube && (
+          <div className="mx-4 mt-2 mb-2">
+            <div className="bg-[#333333] rounded-lg p-3 border border-red-500/20">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0">
+                  <Video className="w-3 h-3 text-white" />
+                </div>
+                <h3 className="text-sm font-medium text-[#E0E0E0]">
+                  YouTube Video{detectedYouTubeUrls.length > 1 ? 's' : ''} Detected
+                </h3>
+              </div>
+              <div className="space-y-3">
+                {detectedYouTubeUrls.map((urlData, index) => (
+                  <div key={index} className="p-3 bg-[#2B2B2B] rounded border border-[#404040]">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-[#B0B0B0] truncate" title={urlData.url}>
+                          Video ID: {urlData.videoId}
+                        </p>
+                        <p className="text-xs text-[#808080] truncate">
+                          {urlData.url}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Quality selection - only show if enabled in settings */}
+                    {youtubeSettings.showQualitySelector && (
+                      <div className="mb-3">
+                        <label className="text-xs text-[#B0B0B0] mb-1 block">Quality:</label>
+                        <select
+                          className="w-full bg-[#1E1E1E] border border-[#4A4A4A] rounded px-2 py-1 text-xs text-white"
+                          defaultValue={youtubeSettings.defaultQuality}
+                          id={`quality-${index}`}
+                          aria-label="Video quality selection"
+                        >
+                          <option value="auto">Auto (Best Available)</option>
+                          <option value="1080p">1080p (High)</option>
+                          <option value="720p">720p (Medium)</option>
+                          <option value="480p">480p (Low)</option>
+                          <option value="audio">Audio Only</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Download buttons */}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Get quality from selector if shown, otherwise use default from settings
+                          let quality = youtubeSettings.defaultQuality
+                          if (youtubeSettings.showQualitySelector) {
+                            const qualitySelect = document.getElementById(`quality-${index}`) as HTMLSelectElement
+                            quality = qualitySelect?.value || youtubeSettings.defaultQuality
+                          }
+
+                          // Pass quality preference to download function
+                          handleYouTubeDownload(urlData.url, quality)
+
+                          // Remove this URL from detected list once download starts
+                          setDetectedYouTubeUrls(prev => prev.filter((_, i) => i !== index))
+                        }}
+                        className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs rounded-md transition-colors flex items-center gap-1.5 flex-1"
+                      >
+                        <Video className="w-3 h-3" />
+                        Download Video
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Quick download with default settings
+                          handleYouTubeDownload(urlData.url, youtubeSettings.defaultQuality)
+                          setDetectedYouTubeUrls(prev => prev.filter((_, i) => i !== index))
+                        }}
+                        className="px-2 py-1.5 bg-[#4A4A4A] hover:bg-[#5A5A5A] text-white text-xs rounded-md transition-colors"
+                        title={`Quick download with ${youtubeSettings.defaultQuality} quality`}
+                      >
+                        Quick
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex items-center justify-between">
+                <p className="text-xs text-[#808080]">
+                  Videos will be downloaded and added to your files (max {youtubeSettings.maxFileSize}MB)
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setDetectedYouTubeUrls([])}
+                  className="text-xs text-[#808080] hover:text-white transition-colors"
+                >
+                  Dismiss all
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Instagram download progress indicator */}
+        {instagramDownloadProgress && (
+          <div className="mx-4 mt-2 mb-2">
+            <div className="bg-[#333333] rounded-lg p-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
+                  <ImageIcon className="w-4 h-4 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-sm text-[#B0B0B0] truncate">
+                      {instagramDownloadProgress.message || 'Downloading Instagram media...'}
+                    </p>
+                    {instagramDownloadProgress.progress !== undefined && (
+                      <span className="text-xs text-[#808080]">
+                        {Math.round(instagramDownloadProgress.progress)}%
+                      </span>
+                    )}
+                  </div>
+                  {instagramDownloadProgress.progress !== undefined && (
+                    <div className="w-full bg-[#2B2B2B] rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className={`h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-300 ${
+                          instagramDownloadProgress.progress === 0 ? 'w-0' :
+                          instagramDownloadProgress.progress <= 5 ? 'w-[5%]' :
+                          instagramDownloadProgress.progress <= 10 ? 'w-[10%]' :
+                          instagramDownloadProgress.progress <= 15 ? 'w-[15%]' :
+                          instagramDownloadProgress.progress <= 20 ? 'w-[20%]' :
+                          instagramDownloadProgress.progress <= 25 ? 'w-1/4' :
+                          instagramDownloadProgress.progress <= 30 ? 'w-[30%]' :
+                          instagramDownloadProgress.progress <= 35 ? 'w-[35%]' :
+                          instagramDownloadProgress.progress <= 40 ? 'w-[40%]' :
+                          instagramDownloadProgress.progress <= 45 ? 'w-[45%]' :
+                          instagramDownloadProgress.progress <= 50 ? 'w-1/2' :
+                          instagramDownloadProgress.progress <= 55 ? 'w-[55%]' :
+                          instagramDownloadProgress.progress <= 60 ? 'w-[60%]' :
+                          instagramDownloadProgress.progress <= 65 ? 'w-[65%]' :
+                          instagramDownloadProgress.progress <= 70 ? 'w-[70%]' :
+                          instagramDownloadProgress.progress <= 75 ? 'w-3/4' :
+                          instagramDownloadProgress.progress <= 80 ? 'w-[80%]' :
+                          instagramDownloadProgress.progress <= 85 ? 'w-[85%]' :
+                          instagramDownloadProgress.progress <= 90 ? 'w-[90%]' :
+                          instagramDownloadProgress.progress <= 95 ? 'w-[95%]' :
+                          'w-full'
+                        }`}
+                        aria-valuenow={instagramDownloadProgress.progress}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        role="progressbar"
+                      />
+                    </div>
+                  )}
+                  {instagramDownloadProgress.status === 'error' && instagramDownloadProgress.error && (
+                    <p className="text-xs text-red-400 mt-1">
+                      {instagramDownloadProgress.error}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Instagram URL detection and download prompt */}
+        {detectedInstagramUrls.length > 0 && !isDownloadingInstagram && (
+          <div className="mx-4 mt-2 mb-2">
+            <div className="bg-[#333333] rounded-lg p-3 border border-purple-500/20">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
+                  <ImageIcon className="w-3 h-3 text-white" />
+                </div>
+                <h3 className="text-sm font-medium text-[#E0E0E0]">
+                  Instagram {detectedInstagramUrls.length > 1 ? 'Media' : detectedInstagramUrls[0]?.type === 'reel' ? 'Reel' : 'Post'} Detected
+                </h3>
+              </div>
+              <div className="space-y-3">
+                {detectedInstagramUrls.map((urlData, index) => (
+                  <div key={index} className="p-3 bg-[#2B2B2B] rounded border border-[#404040]">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-[#B0B0B0] truncate" title={urlData.url}>
+                          {urlData.type === 'reel' ? 'Reel' : urlData.type === 'story' ? 'Story' : 'Post'} ID: {urlData.mediaId}
+                        </p>
+                        <p className="text-xs text-[#808080] truncate">
+                          {urlData.url}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Download buttons */}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleInstagramDownload(urlData.url)
+
+                          // Remove this URL from detected list once download starts
+                          setDetectedInstagramUrls(prev => prev.filter((_, i) => i !== index))
+                        }}
+                        className="px-3 py-1.5 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white text-xs rounded-md transition-colors flex items-center gap-1.5 flex-1"
+                      >
+                        <ImageIcon className="w-3 h-3" />
+                        Download {urlData.type === 'reel' ? 'Reel' : 'Media'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Quick download
+                          handleInstagramDownload(urlData.url)
+                          setDetectedInstagramUrls(prev => prev.filter((_, i) => i !== index))
+                        }}
+                        className="px-2 py-1.5 bg-[#4A4A4A] hover:bg-[#5A5A5A] text-white text-xs rounded-md transition-colors"
+                        title="Quick download"
+                      >
+                        Quick
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex items-center justify-between">
+                <p className="text-xs text-[#808080]">
+                  Media will be downloaded and added to your files
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setDetectedInstagramUrls([])}
+                  className="text-xs text-[#808080] hover:text-white transition-colors"
+                >
+                  Dismiss all
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TikTok download progress indicator */}
+        {tiktokDownloadProgress && (
+          <div className="mx-4 mt-2 mb-2">
+            <div className="bg-[#333333] rounded-lg p-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-black flex items-center justify-center flex-shrink-0">
+                  <Video className="w-4 h-4 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-sm text-[#B0B0B0] truncate">
+                      {tiktokDownloadProgress.message || 'Downloading TikTok video...'}
+                    </p>
+                    {tiktokDownloadProgress.progress !== undefined && (
+                      <span className="text-xs text-[#808080]">
+                        {Math.round(tiktokDownloadProgress.progress)}%
+                      </span>
+                    )}
+                  </div>
+                  {tiktokDownloadProgress.progress !== undefined && (
+                    <div className="w-full bg-[#2B2B2B] rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className={`h-full bg-gradient-to-r from-black to-gray-600 rounded-full transition-all duration-300 ${
+                          tiktokDownloadProgress.progress === 0 ? 'w-0' :
+                          tiktokDownloadProgress.progress <= 5 ? 'w-[5%]' :
+                          tiktokDownloadProgress.progress <= 10 ? 'w-[10%]' :
+                          tiktokDownloadProgress.progress <= 15 ? 'w-[15%]' :
+                          tiktokDownloadProgress.progress <= 20 ? 'w-[20%]' :
+                          tiktokDownloadProgress.progress <= 25 ? 'w-1/4' :
+                          tiktokDownloadProgress.progress <= 30 ? 'w-[30%]' :
+                          tiktokDownloadProgress.progress <= 35 ? 'w-[35%]' :
+                          tiktokDownloadProgress.progress <= 40 ? 'w-[40%]' :
+                          tiktokDownloadProgress.progress <= 45 ? 'w-[45%]' :
+                          tiktokDownloadProgress.progress <= 50 ? 'w-1/2' :
+                          tiktokDownloadProgress.progress <= 55 ? 'w-[55%]' :
+                          tiktokDownloadProgress.progress <= 60 ? 'w-[60%]' :
+                          tiktokDownloadProgress.progress <= 65 ? 'w-[65%]' :
+                          tiktokDownloadProgress.progress <= 70 ? 'w-[70%]' :
+                          tiktokDownloadProgress.progress <= 75 ? 'w-3/4' :
+                          tiktokDownloadProgress.progress <= 80 ? 'w-[80%]' :
+                          tiktokDownloadProgress.progress <= 85 ? 'w-[85%]' :
+                          tiktokDownloadProgress.progress <= 90 ? 'w-[90%]' :
+                          tiktokDownloadProgress.progress <= 95 ? 'w-[95%]' :
+                          'w-full'
+                        }`}
+                        aria-valuenow={tiktokDownloadProgress.progress}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        role="progressbar"
+                      />
+                    </div>
+                  )}
+                  {tiktokDownloadProgress.status === 'error' && tiktokDownloadProgress.error && (
+                    <p className="text-xs text-red-400 mt-1">
+                      {tiktokDownloadProgress.error}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Facebook download progress indicator */}
+        {facebookDownloadProgress && (
+          <div className="mx-4 mt-2 mb-2">
+            <div className="bg-[#333333] rounded-lg p-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-[#1877F2] flex items-center justify-center flex-shrink-0">
+                  <span className="text-white font-bold text-sm">f</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-sm text-[#B0B0B0] truncate">
+                      {facebookDownloadProgress.message || 'Downloading Facebook video...'}
+                    </p>
+                    {facebookDownloadProgress.progress !== undefined && (
+                      <span className="text-xs text-[#808080]">
+                        {Math.round(facebookDownloadProgress.progress)}%
+                      </span>
+                    )}
+                  </div>
+                  {facebookDownloadProgress.progress !== undefined && (
+                    <div className="w-full bg-[#2B2B2B] rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className={`h-full bg-[#1877F2] rounded-full transition-all duration-300 ${
+                          facebookDownloadProgress.status === 'error'
+                            ? 'bg-red-500'
+                            : facebookDownloadProgress.progress < 10
+                            ? 'w-[10%]'
+                            : facebookDownloadProgress.progress < 20
+                            ? 'w-[20%]'
+                            : facebookDownloadProgress.progress < 30
+                            ? 'w-[30%]'
+                            : facebookDownloadProgress.progress < 40
+                            ? 'w-[40%]'
+                            : facebookDownloadProgress.progress < 50
+                            ? 'w-[50%]'
+                            : facebookDownloadProgress.progress < 60
+                            ? 'w-[60%]'
+                            : facebookDownloadProgress.progress < 70
+                            ? 'w-[70%]'
+                            : facebookDownloadProgress.progress < 80
+                            ? 'w-[80%]'
+                            : facebookDownloadProgress.progress < 90
+                            ? 'w-[90%]'
+                            : facebookDownloadProgress.progress < 100
+                            ? 'w-[95%]'
+                            : 'w-full'
+                        }`}
+                        aria-valuenow={facebookDownloadProgress.progress}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        role="progressbar"
+                      />
+                    </div>
+                  )}
+                  {facebookDownloadProgress.status === 'error' && facebookDownloadProgress.error && (
+                    <p className="text-xs text-red-400 mt-1">
+                      {facebookDownloadProgress.error}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TikTok URL detection and download prompt */}
+        {detectedTikTokUrls.length > 0 && !isDownloadingTikTok && (
+          <div className="mx-4 mt-2 mb-2">
+            <div className="bg-[#333333] rounded-lg p-3 border border-gray-500/20">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-6 h-6 rounded-full bg-black flex items-center justify-center flex-shrink-0">
+                  <Video className="w-3 h-3 text-white" />
+                </div>
+                <h3 className="text-sm font-medium text-[#E0E0E0]">
+                  TikTok Video{detectedTikTokUrls.length > 1 ? 's' : ''} Detected
+                </h3>
+              </div>
+              <div className="space-y-3">
+                {detectedTikTokUrls.map((urlData, index) => (
+                  <div key={index} className="p-3 bg-[#2B2B2B] rounded border border-[#404040]">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-[#B0B0B0] truncate" title={urlData.url}>
+                          {urlData.username ? `@${urlData.username}` : 'TikTok Video'}
+                        </p>
+                        <p className="text-xs text-[#808080] truncate">
+                          {urlData.url}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Download buttons */}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleTikTokDownload(urlData.url)
+
+                          // Remove this URL from detected list once download starts
+                          setDetectedTikTokUrls(prev => prev.filter((_, i) => i !== index))
+                        }}
+                        className="px-3 py-1.5 bg-black hover:bg-gray-800 text-white text-xs rounded-md transition-colors flex items-center gap-1.5 flex-1"
+                      >
+                        <Video className="w-3 h-3" />
+                        Download Video
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Quick download
+                          handleTikTokDownload(urlData.url)
+                          setDetectedTikTokUrls(prev => prev.filter((_, i) => i !== index))
+                        }}
+                        className="px-2 py-1.5 bg-[#4A4A4A] hover:bg-[#5A5A5A] text-white text-xs rounded-md transition-colors"
+                        title="Quick download"
+                      >
+                        Quick
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex items-center justify-between">
+                <p className="text-xs text-[#808080]">
+                  Videos will be downloaded and added to your files
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setDetectedTikTokUrls([])}
+                  className="text-xs text-[#808080] hover:text-white transition-colors"
+                >
+                  Dismiss all
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Facebook URL detection and download prompt */}
+        {detectedFacebookUrls.length > 0 && !isDownloadingFacebook && (
+          <div className="mx-4 mt-2 mb-2">
+            <div className="bg-[#333333] rounded-lg p-3 border border-blue-500/20">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-[#1877F2] rounded-full flex items-center justify-center">
+                    <span className="text-white font-bold text-lg">f</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-white">Facebook video{detectedFacebookUrls.length > 1 ? 's' : ''} detected</p>
+                    <p className="text-xs text-[#808080] mt-0.5">
+                      {detectedFacebookUrls.map(f => f.videoId || 'Video').join(', ')}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDetectedFacebookUrls([])}
+                  className="text-[#808080] hover:text-white transition-colors"
+                  title="Dismiss"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-2 mt-3">
+                {detectedFacebookUrls.map((facebook, index) => (
+                  <div key={`${facebook.url}-${index}`} className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleFacebookDownload(facebook.url)}
+                      className="px-3 py-1.5 bg-[#1877F2] hover:bg-[#1565D8] text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={isDownloadingFacebook}
+                    >
+                      <Video className="w-3 h-3 inline mr-1" />
+                      Download
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleFacebookDownload(facebook.url)}
+                      className="px-3 py-1.5 bg-[#3A3A3A] hover:bg-[#454545] text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={isDownloadingFacebook}
+                      title="Quick download"
+                    >
+                      Quick
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#404040]">
+                <p className="text-xs text-[#808080]">
+                  Download Facebook videos directly
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setDetectedFacebookUrls([])}
+                  className="text-xs text-[#808080] hover:text-white transition-colors"
+                >
+                  Dismiss all
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Instagram Preview Components */}
+        {instagramPreviews.length > 0 && !isDownloadingInstagram && (
+          <div className="mx-4 mt-2 mb-2 space-y-2">
+            {instagramPreviews.map((preview, index) => (
+              <InstagramPreview
+                key={`${preview.url}-${index}`}
+                url={preview.url}
+                mediaId={preview.mediaId}
+                type={preview.type}
+                isDownloading={isDownloadingInstagram}
+                downloadProgress={instagramDownloadProgress?.progress}
+                onDownload={(url) => handleInstagramDownload(url, false)}
+                onRemove={() => handleInstagramPreviewRemove(preview.url)}
+              />
+            ))}
+          </div>
+        )}
+
 
         {/* Single file preview (for backward compatibility) */}
         {selectedFile && (!selectedFiles || selectedFiles.length === 0) && (
@@ -1188,6 +2538,7 @@ export function AI_Prompt({
                     {selectedFile.file.type.startsWith("audio/") && selectedFile.preview && " • Ready to play"}
                     {selectedFile.file.type.startsWith("video/") && selectedFile.videoDuration &&
                       ` • ${formatVideoDuration(selectedFile.videoDuration)}`}
+                    <span className="text-yellow-500/70" title="Uploaded files expire after 48 hours"> • ⏱️ 48hr</span>
                   </p>
                 </div>
               </div>
@@ -1237,7 +2588,7 @@ export function AI_Prompt({
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
                 onChange={(e) => {
-                  onChange(e.target.value)
+                  handleTextChange(e.target.value)
 
                   // Only adjust height for user typing, not programmatic updates
                   if (!isProgrammaticUpdate) {
@@ -1564,6 +2915,16 @@ export function AI_Prompt({
           </div>
         </div>
       </div>
+
+      {/* Cookie Manager Modal */}
+      {showCookieManager && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <CookieManager
+            onCookiesReady={handleCookiesReady}
+            onClose={handleCookieManagerClose}
+          />
+        </div>
+      )}
     </div>
   )
 }

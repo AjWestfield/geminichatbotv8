@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import {
   Dialog,
   DialogContent,
@@ -85,15 +85,28 @@ export function ImageUpscaleModal({
   const [debugLogs, setDebugLogs] = useState<string[]>([])
   const [apiKeyStatus, setApiKeyStatus] = useState<'checking' | 'valid' | 'missing' | 'unknown'>('unknown')
   const [lastError, setLastError] = useState<{ title: string; message: string } | null>(null)
+  const [hasAutoDetected, setHasAutoDetected] = useState(false)
 
   const { addImageGeneration, updateProgress, removeProgress, updateStage } = useImageProgressStore()
 
-  // Debug logging helper
-  const addDebugLog = (message: string) => {
+  // Debug logging helper - memoized to prevent infinite loops
+  const addDebugLog = useCallback((message: string) => {
     const timestamp = new Date().toLocaleTimeString()
     setDebugLogs(prev => [...prev, `[${timestamp}] ${message}`])
     console.log(`[ImageUpscaleModal] ${message}`)
-  }
+  }, [])
+
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setHasAutoDetected(false)
+      setEnhanceModel('Standard V2')
+      setUpscaleFactor('2x')
+      setFaceEnhancement(false)
+      setDebugLogs([])
+      setLastError(null)
+    }
+  }, [isOpen])
 
   // Check API key on mount
   useEffect(() => {
@@ -148,25 +161,30 @@ export function ImageUpscaleModal({
           setUrlValidationStatus('valid')
         }
 
-        // Auto-detect optimal settings based on image
-        if (img.width < 512 || img.height < 512) {
-          setEnhanceModel('Low Resolution V2')
-          setUpscaleFactor('4x')
-          addDebugLog('📐 Detected low resolution image, using optimized settings')
-        } else if (image.prompt?.toLowerCase().includes('text') || image.prompt?.toLowerCase().includes('document')) {
-          setEnhanceModel('Text Refine')
-          addDebugLog('📝 Detected text content, using Text Refine model')
-        } else if (image.prompt?.toLowerCase().includes('render') || image.prompt?.toLowerCase().includes('3d') || image.model.includes('flux')) {
-          setEnhanceModel('CGI')
-          addDebugLog('🎨 Detected CGI/3D content, using CGI model')
-        }
+        // Auto-detect optimal settings based on image (only once per modal open)
+        if (!hasAutoDetected) {
+          if (img.width < 512 || img.height < 512) {
+            setEnhanceModel('Low Resolution V2')
+            setUpscaleFactor('4x')
+            addDebugLog('📐 Detected low resolution image, using optimized settings')
+          } else if (image.prompt?.toLowerCase().includes('text') || image.prompt?.toLowerCase().includes('document')) {
+            setEnhanceModel('Text Refine')
+            addDebugLog('📝 Detected text content, using Text Refine model')
+          } else if (image.prompt?.toLowerCase().includes('render') || image.prompt?.toLowerCase().includes('3d') || image.model.includes('flux')) {
+            setEnhanceModel('CGI')
+            addDebugLog('🎨 Detected CGI/3D content, using CGI model')
+          }
 
-        // Auto-enable face enhancement if likely contains faces
-        const faceKeywords = ['person', 'portrait', 'face', 'selfie', 'people', 'man', 'woman', 'child']
-        const hasFaces = faceKeywords.some(kw => image.prompt?.toLowerCase().includes(kw))
-        if (hasFaces) {
-          setFaceEnhancement(true)
-          addDebugLog('👤 Detected faces in prompt, enabling face enhancement')
+          // Auto-enable face enhancement if likely contains faces
+          const faceKeywords = ['person', 'portrait', 'face', 'selfie', 'people', 'man', 'woman', 'child']
+          const hasFaces = faceKeywords.some(kw => image.prompt?.toLowerCase().includes(kw))
+          if (hasFaces) {
+            setFaceEnhancement(true)
+            addDebugLog('👤 Detected faces in prompt, enabling face enhancement')
+          }
+          
+          // Mark auto-detection as complete
+          setHasAutoDetected(true)
         }
       }
 
@@ -179,7 +197,7 @@ export function ImageUpscaleModal({
 
       img.src = image.url
     }
-  }, [image, isOpen, urlValidationStatus])
+  }, [image, isOpen, urlValidationStatus, hasAutoDetected, addDebugLog])
 
   // Calculate cost estimate
   const costEstimate = useMemo(() => {
@@ -522,16 +540,18 @@ export function ImageUpscaleModal({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(modelDescriptions).map(([model, description]) => (
+                    {Object.entries(modelDescriptions).map(([model]) => (
                       <SelectItem key={model} value={model}>
-                        <div>
-                          <div className="font-medium text-xs">{model}</div>
-                          <div className="text-xs text-muted-foreground">{description}</div>
-                        </div>
+                        {model}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {enhanceModel && modelDescriptions[enhanceModel as keyof typeof modelDescriptions] && (
+                  <p className="text-xs text-muted-foreground px-1">
+                    {modelDescriptions[enhanceModel as keyof typeof modelDescriptions]}
+                  </p>
+                )}
                 <Select value={upscaleFactor} onValueChange={setUpscaleFactor}>
                   <SelectTrigger className="h-8 text-xs">
                     <SelectValue />

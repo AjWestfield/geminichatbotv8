@@ -100,9 +100,11 @@ export async function generateImageWithGPTImage1(
     throw new Error('OpenAI API key not configured. Please add OPENAI_API_KEY to your .env.local file.');
   }
 
-  // Initialize OpenAI client
+  // Initialize OpenAI client with timeout and retry configuration
   const openai = new OpenAI({
     apiKey: apiKey,
+    timeout: 60000, // 60 second timeout
+    maxRetries: 3, // Retry up to 3 times
   });
 
   try {
@@ -214,9 +216,11 @@ export async function editImageWithGPTImage1(
     throw new Error('OpenAI API key not configured.');
   }
 
-  // Initialize OpenAI client
+  // Initialize OpenAI client with timeout and retry configuration
   const openai = new OpenAI({
     apiKey: apiKey,
+    timeout: 60000, // 60 second timeout
+    maxRetries: 3, // Retry up to 3 times
   });
 
   try {
@@ -298,6 +302,21 @@ export async function editImageWithGPTImage1(
   } catch (error: any) {
     console.error('GPT-Image-1 edit error:', error);
     console.error('Error details:', error.response?.data || error.message);
+    
+    // Check for network/connection errors
+    if (error.cause?.code === 'ECONNRESET' || 
+        error.cause?.code === 'ETIMEDOUT' ||
+        error.cause?.code === 'ENOTFOUND' ||
+        error.message?.includes('Connection error') ||
+        error.message?.includes('network')) {
+      console.error('Network error detected:', error.cause?.code || 'Unknown');
+      
+      // Create a more user-friendly error message
+      const networkError = new Error('Network connection failed while editing image. This may be due to the image size or a temporary connection issue.');
+      (networkError as any).code = 'network_error';
+      (networkError as any).cause = error.cause;
+      throw networkError;
+    }
 
     // Check for moderation/safety system errors first
     if (error.message?.includes('safety system') || error.code === 'moderation_blocked' || error.type === 'image_generation_user_error') {
@@ -312,7 +331,11 @@ export async function editImageWithGPTImage1(
       // Try with dall-e-2 as fallback
       console.log('GPT-Image-1 not available, falling back to dall-e-2...');
 
-      const openai = new OpenAI({ apiKey });
+      const openai = new OpenAI({ 
+        apiKey, 
+        timeout: 60000, // 60 second timeout
+        maxRetries: 3, // Retry up to 3 times
+      });
 
       // Re-process the image for the fallback attempt
       let fallbackImageBuffer: Buffer;
@@ -395,9 +418,11 @@ export async function createImageVariationGPT1(
     throw new Error('OpenAI API key not configured.');
   }
 
-  // Initialize OpenAI client
+  // Initialize OpenAI client with timeout and retry configuration
   const openai = new OpenAI({
     apiKey: apiKey,
+    timeout: 60000, // 60 second timeout
+    maxRetries: 3, // Retry up to 3 times
   });
 
   try {
@@ -557,7 +582,11 @@ export async function generateImageWithContext(
     throw new Error('OpenAI API key not configured.');
   }
 
-  const openai = new OpenAI({ apiKey });
+  const openai = new OpenAI({ 
+    apiKey,
+    timeout: 60000, // 60 second timeout
+    maxRetries: 3, // Retry up to 3 times
+  });
 
   try {
     console.log('Generating image with context using GPT-4V...');

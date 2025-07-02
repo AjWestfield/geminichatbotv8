@@ -2,10 +2,11 @@ export interface GeneratedVideo {
   id: string;
   prompt: string;
   url: string;
+  permanentUrl?: string;
   thumbnailUrl?: string;
-  duration: 5 | 10;
+  duration: 5 | 8 | 10;
   aspectRatio: "16:9" | "9:16" | "1:1";
-  model: 'standard' | 'pro';
+  model: 'standard' | 'pro' | 'veo3';
   sourceImage?: string;
   status: 'generating' | 'completed' | 'failed';
   createdAt: Date;
@@ -15,15 +16,15 @@ export interface GeneratedVideo {
 }
 
 export interface VideoGenerationSettings {
-  model: 'standard' | 'pro';
-  defaultDuration: 5 | 10;
+  model: 'standard' | 'pro' | 'veo3';
+  defaultDuration: 5 | 8 | 10;
   defaultAspectRatio: "16:9" | "9:16" | "1:1";
   defaultNegativePrompt?: string;
 }
 
 export interface VideoGenerationInput {
   prompt: string;
-  duration?: 5 | 10;
+  duration?: 5 | 8 | 10;
   cfg_scale?: number;
   start_image?: string;
   end_image?: string;

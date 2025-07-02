@@ -1,4 +1,5 @@
 import { put, del, list } from '@vercel/blob'
+import { validateImageUrl } from '../image-url-validator'
 
 // Check if blob storage is configured
 const isBlobConfigured = () => {
@@ -19,10 +20,15 @@ export async function uploadImageToBlob(
     console.log('[BLOB] Starting upload for:', filename)
     console.log('[BLOB] URL type:', imageUrl.startsWith('data:') ? 'data URL' : 'external URL')
     
-    // If it's already a blob URL, return it
+    // If it's already a blob URL, check if it's still valid
     if (imageUrl.startsWith('https://') && imageUrl.includes('.blob.vercel-storage.com')) {
-      console.log('[BLOB] Already a blob URL, returning as-is')
-      return imageUrl
+      console.log('[BLOB] Existing blob URL detected, checking validity...')
+      const isValid = await validateImageUrl(imageUrl)
+      if (isValid) {
+        console.log('[BLOB] Existing blob URL is still valid, returning as-is')
+        return imageUrl
+      }
+      console.log('[BLOB] Existing blob URL is invalid, will re-upload')
     }
 
     // Handle data URLs
@@ -121,17 +127,37 @@ export async function uploadImageToBlob(
 }
 
 // Helper to delete image from blob storage
-export async function deleteImageFromBlob(url: string): Promise<void> {
+export async function deleteImageFromBlob(url: string): Promise<boolean> {
   if (!isBlobConfigured()) {
-    return
+    console.log('[BLOB DELETE] Blob storage not configured - skipping deletion')
+    return false
   }
 
   try {
-    if (url.includes('.blob.vercel-storage.com')) {
-      await del(url)
+    // Skip if not a blob URL
+    if (!url.includes('.blob.vercel-storage.com')) {
+      console.log('[BLOB DELETE] Not a blob URL, skipping deletion:', url)
+      return false
     }
+
+    console.log('[BLOB DELETE] Attempting to delete blob:', url)
+
+    // Extract the pathname from the blob URL
+    // Example: https://xyz123.public.blob.vercel-storage.com/images/filename-abc123.png
+    const urlObj = new URL(url)
+    const pathname = urlObj.pathname.substring(1) // Remove leading slash
+
+    if (!pathname) {
+      console.error('[BLOB DELETE] Could not extract pathname from URL:', url)
+      return false
+    }
+
+    await del(pathname)
+    console.log('[BLOB DELETE] Successfully deleted blob:', pathname)
+    return true
   } catch (error) {
-    console.error('Error deleting from blob storage:', error)
+    console.error('[BLOB DELETE] Error deleting from blob storage:', error)
+    return false
   }
 }
 
@@ -151,3 +177,6 @@ export async function listImagesInBlob() {
     return []
   }
 }
+
+// Alias for generic blob deletion
+export const deleteBlob = deleteImageFromBlob

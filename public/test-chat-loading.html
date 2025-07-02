@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Chat Loading</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #0a0a0a;
+            color: #f0f0f0;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #333;
+            border-radius: 8px;
+            background: #111;
+        }
+        .test-section h2 {
+            margin-top: 0;
+            color: #60a5fa;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 8px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        .error {
+            color: #ef4444;
+            margin-top: 10px;
+        }
+        .success {
+            color: #10b981;
+            margin-top: 10px;
+        }
+        .info {
+            color: #8b5cf6;
+            margin-top: 10px;
+        }
+        pre {
+            background: #000;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .chat-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #1a1a1a;
+            border-radius: 4px;
+            cursor: pointer;
+            border: 1px solid #333;
+        }
+        .chat-item:hover {
+            border-color: #3b82f6;
+        }
+        .loading {
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body>
+    <h1>Debug Chat Loading Issue</h1>
+
+    <div class="test-section">
+        <h2>1. Test Chat List Loading</h2>
+        <button onclick="testChatList()">Load Chat List</button>
+        <div id="chat-list-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>2. Test Individual Chat Loading</h2>
+        <p>Click on a chat from the list above to test loading it</p>
+        <div id="chat-load-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>3. Console Logs</h2>
+        <button onclick="clearLogs()">Clear Logs</button>
+        <pre id="console-logs"></pre>
+    </div>
+
+    <script>
+        const logs = [];
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+
+        // Intercept console logs
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            addLog('LOG', args);
+        };
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            addLog('ERROR', args);
+        };
+        console.warn = function(...args) {
+            originalWarn.apply(console, args);
+            addLog('WARN', args);
+        };
+
+        function addLog(type, args) {
+            const timestamp = new Date().toLocaleTimeString();
+            const message = args.map(arg => 
+                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+            ).join(' ');
+            logs.push(`[${timestamp}] ${type}: ${message}`);
+            updateLogsDisplay();
+        }
+
+        function updateLogsDisplay() {
+            const logsEl = document.getElementById('console-logs');
+            logsEl.textContent = logs.slice(-20).join('\n');
+        }
+
+        function clearLogs() {
+            logs.length = 0;
+            updateLogsDisplay();
+        }
+
+        async function testChatList() {
+            const resultEl = document.getElementById('chat-list-result');
+            resultEl.innerHTML = '<div class="info">Loading chats...</div>';
+
+            try {
+                console.log('Fetching chat list...');
+                const response = await fetch('/api/chats');
+                console.log('Response status:', response.status);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                console.log('Received data:', data);
+
+                if (!data.chats || data.chats.length === 0) {
+                    resultEl.innerHTML = '<div class="error">No chats found</div>';
+                    return;
+                }
+
+                resultEl.innerHTML = `
+                    <div class="success">Found ${data.chats.length} chats</div>
+                    <div style="margin-top: 10px;">
+                        ${data.chats.map(chat => `
+                            <div class="chat-item" onclick="testLoadChat('${chat.id}')">
+                                <strong>${chat.title || 'Untitled'}</strong><br>
+                                <small>ID: ${chat.id}</small><br>
+                                <small>Messages: ${chat.message_count || 0} | Images: ${chat.image_count || 0}</small><br>
+                                <small>Has thumbnails: ${chat.image_thumbnails ? 'Yes (' + chat.image_thumbnails.length + ')' : 'No'}</small>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error loading chats:', error);
+                resultEl.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testLoadChat(chatId) {
+            const resultEl = document.getElementById('chat-load-result');
+            resultEl.innerHTML = '<div class="info loading">Loading chat ' + chatId + '...</div>';
+
+            try {
+                console.log('Loading chat:', chatId);
+                const startTime = Date.now();
+                
+                const response = await fetch(`/api/chats/${chatId}`);
+                const loadTime = Date.now() - startTime;
+                
+                console.log('Response status:', response.status, 'Load time:', loadTime + 'ms');
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Error response:', errorText);
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+
+                const data = await response.json();
+                console.log('Chat data received:', {
+                    hasChat: !!data.chat,
+                    messageCount: data.messages?.length || 0,
+                    imageCount: data.images?.length || 0,
+                    hasCanvasState: !!data.canvasState,
+                    pagination: data.messagesPagination
+                });
+
+                resultEl.innerHTML = `
+                    <div class="success">Chat loaded successfully in ${loadTime}ms</div>
+                    <div style="margin-top: 10px;">
+                        <strong>Chat:</strong> ${data.chat?.title || 'Untitled'}<br>
+                        <strong>Messages:</strong> ${data.messages?.length || 0}<br>
+                        <strong>Images:</strong> ${data.images?.length || 0}<br>
+                        <strong>Videos:</strong> ${data.videos?.length || 0}<br>
+                        ${data.messagesPagination ? `
+                            <strong>Pagination:</strong> Loaded ${data.messagesPagination.loaded} of ${data.messagesPagination.total} messages<br>
+                            ${data.messagesPagination.error ? `<div class="error">Pagination error: ${data.messagesPagination.error}</div>` : ''}
+                        ` : ''}
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error loading chat:', error);
+                resultEl.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        // Auto-load chat list on page load
+        window.addEventListener('load', () => {
+            console.log('Page loaded, testing chat functionality...');
+            testChatList();
+        });
+    </script>
+</body>
+</html>

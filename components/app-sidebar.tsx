@@ -25,6 +25,8 @@ import {
   Calendar,
   Clock,
   Activity,
+  Globe,
+  Loader2,
 } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import Link from "next/link"
@@ -47,6 +49,7 @@ import { format, isToday, isYesterday, isThisWeek, isThisMonth } from "date-fns"
 import { Input } from "@/components/ui/input"
 import { formatChatTitleWithTime } from "@/lib/chat-naming"
 import { formatChatDate, formatMessageCount } from "@/lib/format-utils"
+import { preloadChat } from "@/lib/services/chat-persistence-optimized"
 import {
   Tooltip,
   TooltipContent,
@@ -106,11 +109,12 @@ interface SidebarProps {
   onChatSelect?: (chatId: string) => void
   onNewChat?: () => void
   refreshKey?: number
+  isLoadingChat?: boolean
 }
 
-type CombinedSortOption = 
+type CombinedSortOption =
   | 'newest-relative'
-  | 'newest-absolute' 
+  | 'newest-absolute'
   | 'oldest-relative'
   | 'oldest-absolute'
   | 'alphabetical-relative'
@@ -129,6 +133,7 @@ interface ChatListItemProps {
   setEditingChatId: (id: string | null) => void
   setEditingTitle: (title: string) => void
   formatDateDisplay: (date: Date | string) => string
+  isLoadingChat?: boolean
 }
 
 // Memoized chat list item to prevent unnecessary re-renders and tooltip ref issues
@@ -144,7 +149,8 @@ const ChatListItem = memo(({
   onSaveEdit,
   setEditingChatId,
   setEditingTitle,
-  formatDateDisplay
+  formatDateDisplay,
+  isLoadingChat
 }: ChatListItemProps) => {
   // Debug log to check if thumbnails are being received
   useEffect(() => {
@@ -165,7 +171,7 @@ const ChatListItem = memo(({
     const dateObj = new Date(chat.created_at)
     const now = new Date()
     const diffInDays = Math.floor((now.getTime() - dateObj.getTime()) / (1000 * 60 * 60 * 24))
-    
+
     // Today: show time only
     if (isToday(dateObj)) {
       return format(dateObj, 'h:mm a')
@@ -192,7 +198,7 @@ const ChatListItem = memo(({
     const dateObj = new Date(date)
     const now = new Date()
     const diffInDays = Math.floor((now.getTime() - dateObj.getTime()) / (1000 * 60 * 60 * 24))
-    
+
     // Today: show time only
     if (isToday(dateObj)) {
       return format(dateObj, 'h:mm a')
@@ -300,9 +306,24 @@ const ChatListItem = memo(({
               "relative flex h-auto w-full flex-row items-start rounded-md px-2 py-2 transition hover:bg-muted hover:text-primary cursor-pointer",
               currentChatId === chat.id && "bg-muted text-blue-600",
             )}
-            onClick={() => onChatSelect(chat.id)}
+            onClick={() => {
+              if (!isLoadingChat) {
+                onChatSelect(chat.id)
+              }
+            }}
+            onMouseEnter={() => {
+              // Preload chat on hover for faster loading
+              if (chat.id !== currentChatId) {
+                preloadChat(chat.id)
+              }
+            }}
+            style={{ cursor: isLoadingChat ? 'wait' : 'pointer' }}
           >
-            <MessageSquare className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            {isLoadingChat ? (
+              <Loader2 className="h-4 w-4 mt-0.5 flex-shrink-0 animate-spin" />
+            ) : (
+              <MessageSquare className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            )}
             <motion.div variants={variants} className="flex-1 min-w-0 ml-2">
               {!isCollapsed && (
                 <div className="pr-2">
@@ -420,8 +441,8 @@ const ChatListItem = memo(({
               <div className="grid grid-cols-3 gap-1.5 max-w-[240px]">
                 {chat.image_thumbnails.slice(0, 6).map((img, idx) => (
                   <div key={img.id || idx} className="relative aspect-square rounded overflow-hidden bg-zinc-800 group">
-                    <img 
-                      src={img.url} 
+                    <img
+                      src={img.url}
                       alt={img.prompt ? img.prompt.substring(0, 50) : 'Image'}
                       className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-110"
                       loading="lazy"
@@ -447,7 +468,7 @@ const ChatListItem = memo(({
               )}
             </div>
           )}
-          
+
           {/* Fallback when images exist but thumbnails aren't loaded */}
           {chat.image_count > 0 && (!chat.image_thumbnails || chat.image_thumbnails.length === 0) && (
             <div className="pt-3 mt-3 border-t border-zinc-700">
@@ -470,7 +491,7 @@ const ChatListItem = memo(({
 
 ChatListItem.displayName = 'ChatListItem'
 
-export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey }: SidebarProps) {
+export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey, isLoadingChat }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [editingChatId, setEditingChatId] = useState<string | null>(null)
@@ -478,7 +499,7 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
   const [sortAndDisplay, setSortAndDisplay] = useState<CombinedSortOption>('newest-relative')
   const [openDropdowns, setOpenDropdowns] = useState<Set<string>>(new Set())
   const pathname = usePathname()
-  
+
   // Helper functions for dropdown state management
   const handleDropdownOpenChange = useCallback((dropdownId: string, isOpen: boolean) => {
     setOpenDropdowns(prev => {
@@ -491,11 +512,11 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
       return newSet
     })
   }, [])
-  
+
   // Debounced collapse handlers to prevent rapid state changes
   const collapseTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const isRefreshingRef = useRef(false)
-  
+
   const handleMouseEnter = useCallback(() => {
     if (collapseTimeoutRef.current) {
       clearTimeout(collapseTimeoutRef.current)
@@ -506,13 +527,13 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
       setIsCollapsed(false)
     })
   }, [])
-  
+
   const handleMouseLeave = useCallback(() => {
     // Don't collapse if any dropdown is open
     if (openDropdowns.size > 0) {
       return
     }
-    
+
     if (collapseTimeoutRef.current) {
       clearTimeout(collapseTimeoutRef.current)
     }
@@ -530,7 +551,7 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
       }
     }
   }, [])
-  
+
   const {
     chats,
     deleteChat,
@@ -544,7 +565,7 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
     if (refreshKey && refreshKey > 0 && !isRefreshingRef.current) {
       console.log('[SIDEBAR] Refresh triggered by key change:', refreshKey)
       isRefreshingRef.current = true
-      
+
       // Add a small delay to prevent rapid successive calls
       const timeoutId = setTimeout(async () => {
         try {
@@ -553,7 +574,7 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
           isRefreshingRef.current = false
         }
       }, 100)
-      
+
       return () => clearTimeout(timeoutId)
     }
   }, [refreshKey, refreshChats])
@@ -562,7 +583,7 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
   const sortChats = useMemo(() => {
     return (chatsToSort: typeof chats) => {
       const sortMethod = sortAndDisplay.split('-')[0] as 'newest' | 'oldest' | 'alphabetical'
-      
+
       return [...chatsToSort].sort((a, b) => {
         switch (sortMethod) {
           case 'newest':
@@ -593,7 +614,7 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
 
     validChats.forEach(chat => {
       const date = new Date(chat.updated_at || chat.created_at)
-      
+
       if (isToday(date)) {
         groups.Today.push(chat)
       } else if (isYesterday(date)) {
@@ -642,7 +663,7 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
   const formatDateDisplay = (date: Date | string) => {
     const chatDate = typeof date === 'string' ? new Date(date) : date
     const timeDisplayMode = sortAndDisplay.split('-')[1] as 'relative' | 'absolute'
-    
+
     if (timeDisplayMode === 'relative') {
       return formatChatDate(date)
     } else {
@@ -731,25 +752,25 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
                             className="h-8 text-sm"
                           />
                         </div>
-                        
+
                         <div className="mb-4 px-2">
                           <DropdownMenu onOpenChange={(isOpen) => handleDropdownOpenChange('sort', isOpen)}>
                             <DropdownMenuTrigger asChild>
                               <Button variant="outline" size="sm" className="w-full justify-start">
                                 {(() => {
                                   const [sort, time] = sortAndDisplay.split('-')
-                                  
+
                                   // Primary icon based on sort method
                                   let SortIcon = SortDesc
                                   if (sort === 'oldest') SortIcon = SortAsc
                                   else if (sort === 'alphabetical') SortIcon = SortAsc
-                                  
+
                                   // Secondary icon based on time display
                                   const TimeIcon = time === 'relative' ? Clock : Calendar
-                                  
+
                                   const sortLabel = sort === 'newest' ? 'Newest First' : sort === 'oldest' ? 'Oldest First' : 'A-Z'
                                   const timeLabel = time === 'relative' ? 'Relative Time' : 'Exact Time'
-                                  
+
                                   return (
                                     <>
                                       <SortIcon className="h-3 w-3 mr-1" />
@@ -774,7 +795,7 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
                                       <span className="font-medium">Relative Time</span>
                                       <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">Default</span>
                                     </div>
-                                    <span className="text-xs text-muted-foreground ml-5 mt-0.5">Shows "2m ago", "1h ago", etc.</span>
+                                    <span className="text-xs text-muted-foreground ml-5 mt-0.5">{`Shows "2m ago", "1h ago", etc.`}</span>
                                   </div>
                                 </DropdownMenuRadioItem>
                                 <DropdownMenuRadioItem value="newest-absolute">
@@ -783,10 +804,10 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
                                       <Calendar className="h-3 w-3 text-green-600" />
                                       <span className="font-medium">Exact Timestamps</span>
                                     </div>
-                                    <span className="text-xs text-muted-foreground ml-5 mt-0.5">Shows "Jan 5, 2:30 PM"</span>
+                                    <span className="text-xs text-muted-foreground ml-5 mt-0.5">{`Shows "Jan 5, 2:30 PM"`}</span>
                                   </div>
                                 </DropdownMenuRadioItem>
-                                
+
                                 <DropdownMenuSeparator />
                                 <div className="px-2 py-1">
                                   <div className="text-xs font-medium text-muted-foreground mb-1">OLDEST FIRST</div>
@@ -797,7 +818,7 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
                                       <Clock className="h-3 w-3 text-blue-600" />
                                       <span className="font-medium">Relative Time</span>
                                     </div>
-                                    <span className="text-xs text-muted-foreground ml-5 mt-0.5">Shows "2m ago", "1h ago", etc.</span>
+                                    <span className="text-xs text-muted-foreground ml-5 mt-0.5">{`Shows "2m ago", "1h ago", etc.`}</span>
                                   </div>
                                 </DropdownMenuRadioItem>
                                 <DropdownMenuRadioItem value="oldest-absolute">
@@ -806,10 +827,10 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
                                       <Calendar className="h-3 w-3 text-green-600" />
                                       <span className="font-medium">Exact Timestamps</span>
                                     </div>
-                                    <span className="text-xs text-muted-foreground ml-5 mt-0.5">Shows "Jan 5, 2:30 PM"</span>
+                                    <span className="text-xs text-muted-foreground ml-5 mt-0.5">{`Shows "Jan 5, 2:30 PM"`}</span>
                                   </div>
                                 </DropdownMenuRadioItem>
-                                
+
                                 <DropdownMenuSeparator />
                                 <div className="px-2 py-1">
                                   <div className="text-xs font-medium text-muted-foreground mb-1">ALPHABETICAL</div>
@@ -820,7 +841,7 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
                                       <Clock className="h-3 w-3 text-blue-600" />
                                       <span className="font-medium">Relative Time</span>
                                     </div>
-                                    <span className="text-xs text-muted-foreground ml-5 mt-0.5">Shows "2m ago", "1h ago", etc.</span>
+                                    <span className="text-xs text-muted-foreground ml-5 mt-0.5">{`Shows "2m ago", "1h ago", etc.`}</span>
                                   </div>
                                 </DropdownMenuRadioItem>
                                 <DropdownMenuRadioItem value="alphabetical-absolute">
@@ -829,7 +850,7 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
                                       <Calendar className="h-3 w-3 text-green-600" />
                                       <span className="font-medium">Exact Timestamps</span>
                                     </div>
-                                    <span className="text-xs text-muted-foreground ml-5 mt-0.5">Shows "Jan 5, 2:30 PM"</span>
+                                    <span className="text-xs text-muted-foreground ml-5 mt-0.5">{`Shows "Jan 5, 2:30 PM"`}</span>
                                   </div>
                                 </DropdownMenuRadioItem>
                               </DropdownMenuRadioGroup>
@@ -887,6 +908,7 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
                             setEditingChatId={setEditingChatId}
                             setEditingTitle={setEditingTitle}
                             formatDateDisplay={formatDateDisplay}
+                            isLoadingChat={isLoadingChat && currentChatId === chat.id}
                           />
                         ))}
                       </div>
@@ -986,9 +1008,22 @@ export function AppSidebar({ currentChatId, onChatSelect, onNewChat, refreshKey 
                       </motion.li>
                     </Link>
 
+                    <Link
+                      href="/ai-browser-agent"
+                      className={cn(
+                        "flex h-8 w-full flex-row items-center rounded-md px-2 py-1.5 transition hover:bg-muted hover:text-primary",
+                        pathname?.includes("/ai-browser-agent") && "bg-muted text-blue-600",
+                      )}
+                    >
+                      <Globe className="h-4 w-4" />
+                      <motion.li variants={variants}>
+                        {!isCollapsed && <p className="ml-2 text-sm font-medium">AI Browser Agent</p>}
+                      </motion.li>
+                    </Link>
+
                     {/* Footer Actions - Now inside the ScrollArea */}
                     <Separator className="my-2" />
-                    
+
                     <div className="mt-2 mb-1 px-2">
                       <motion.div variants={variants} className="flex items-center">
                         {!isCollapsed && <p className="text-xs font-semibold text-muted-foreground">ACCOUNT</p>}

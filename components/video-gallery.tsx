@@ -1,27 +1,41 @@
 "use client"
 
 import { GeneratedVideo } from "@/lib/video-generation-types"
-import { Play, Download, Loader2, X, Video as VideoIcon, AlertCircle, Clock, CheckCircle } from "lucide-react"
-import { useState, useMemo, useEffect, useRef } from "react"
+import { Play, Download, Loader2, X, Video as VideoIcon, AlertCircle, Clock, CheckCircle, RotateCw } from "lucide-react"
+import { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { VideoPlayerModal } from "./video-player-modal"
 import { VideoLoadingCard } from "./video-loading-card"
 import { isValidVideoUrl, getInvalidVideoMessage } from "@/lib/video-utils"
+import { isReplicateUrlExpired } from "@/lib/video-validation"
+import { VideoThumbnailGenerator } from "@/lib/video-thumbnail-generator"
+import { useThumbnailCache } from "@/hooks/use-thumbnail-cache"
 
 interface VideoGalleryProps {
   videos: GeneratedVideo[]
   onVideoClick?: (video: GeneratedVideo) => void
   onVideoDelete?: (videoId: string) => void
   onCancelVideo?: (videoId: string) => void
+  onAnalyze?: (video: GeneratedVideo) => void
+  onTranscribe?: (video: GeneratedVideo) => void
   className?: string
 }
 
-export function VideoGallery({ videos, onVideoClick, onVideoDelete, onCancelVideo, className }: VideoGalleryProps) {
+export function VideoGallery({ videos, onVideoClick, onVideoDelete, onCancelVideo, onAnalyze, onTranscribe, className }: VideoGalleryProps) {
   const [hoveredVideo, setHoveredVideo] = useState<string | null>(null)
   const [selectedVideo, setSelectedVideo] = useState<GeneratedVideo | null>(null)
   const [loadingVideos, setLoadingVideos] = useState<Set<string>>(new Set())
+  const [videoThumbnails, setVideoThumbnails] = useState<Record<string, string>>({})
+  const [thumbnailGenerating, setThumbnailGenerating] = useState<Set<string>>(new Set())
   const loadingTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map())
+  const thumbnailGenerator = useRef<VideoThumbnailGenerator | null>(null)
+  const { getCachedThumbnail, setCachedThumbnail, removeCachedThumbnail } = useThumbnailCache()
+
+  // Initialize thumbnail generator
+  useEffect(() => {
+    thumbnailGenerator.current = VideoThumbnailGenerator.getInstance()
+  }, [])
 
   // Clean up timeouts on unmount
   useEffect(() => {
@@ -29,6 +43,131 @@ export function VideoGallery({ videos, onVideoClick, onVideoDelete, onCancelVide
       loadingTimeouts.current.forEach(timeout => clearTimeout(timeout))
     }
   }, [])
+
+  // Enhanced thumbnail generation function
+  const generateThumbnail = useCallback(async (video: HTMLVideoElement, videoId: string) => {
+    if (!thumbnailGenerator.current || thumbnailGenerating.has(videoId)) {
+      return
+    }
+
+    try {
+      console.log(`[VideoGallery] Starting enhanced thumbnail generation for video ${videoId}`)
+      setThumbnailGenerating(prev => new Set(prev).add(videoId))
+      
+      // Try to generate thumbnail with multiple strategies
+      const thumbnail = await thumbnailGenerator.current.generateFromVideo(video, {
+        quality: 0.8,
+        maxWidth: 1280,
+        maxHeight: 720,
+        format: 'jpeg'
+      })
+      
+      if (thumbnail) {
+        console.log(`[VideoGallery] Thumbnail generated successfully for video ${videoId}`)
+        
+        // Store in state
+        setVideoThumbnails(prev => ({
+          ...prev,
+          [videoId]: thumbnail
+        }))
+        
+        // Cache for future use
+        setCachedThumbnail(videoId, thumbnail)
+      } else {
+        console.warn(`[VideoGallery] Failed to generate thumbnail for video ${videoId}`)
+      }
+    } catch (error) {
+      console.error(`[VideoGallery] Error generating thumbnail for video ${videoId}:`, error)
+    } finally {
+      setThumbnailGenerating(prev => {
+        const next = new Set(prev)
+        next.delete(videoId)
+        return next
+      })
+    }
+  }, [setCachedThumbnail])
+
+  // Generate thumbnail from URL (for videos not yet loaded)
+  const generateThumbnailFromUrl = useCallback(async (url: string, videoId: string) => {
+    if (!thumbnailGenerator.current || thumbnailGenerating.has(videoId) || videoThumbnails[videoId]) {
+      return
+    }
+
+    try {
+      console.log(`[VideoGallery] Generating thumbnail from URL for video ${videoId}`)
+      setThumbnailGenerating(prev => new Set(prev).add(videoId))
+      
+      const thumbnail = await thumbnailGenerator.current.generateFromUrl(url, {
+        quality: 0.8,
+        maxWidth: 1280,
+        maxHeight: 720,
+        timePercent: 0.1
+      })
+      
+      if (thumbnail) {
+        console.log(`[VideoGallery] Thumbnail from URL generated successfully for video ${videoId}`)
+        
+        setVideoThumbnails(prev => ({
+          ...prev,
+          [videoId]: thumbnail
+        }))
+        
+        setCachedThumbnail(videoId, thumbnail)
+      }
+    } catch (error) {
+      console.error(`[VideoGallery] Error generating thumbnail from URL for video ${videoId}:`, error)
+    } finally {
+      setThumbnailGenerating(prev => {
+        const next = new Set(prev)
+        next.delete(videoId)
+        return next
+      })
+    }
+  }, [setCachedThumbnail, videoThumbnails])
+
+  // Load cached thumbnails on mount
+  useEffect(() => {
+    videos.forEach(video => {
+      if (video.id && !videoThumbnails[video.id]) {
+        const cached = getCachedThumbnail(video.id)
+        if (cached) {
+          setVideoThumbnails(prev => ({
+            ...prev,
+            [video.id]: cached
+          }))
+        }
+      }
+    })
+  }, [videos, getCachedThumbnail, videoThumbnails])
+
+  // Auto-generate thumbnails for videos without them
+  useEffect(() => {
+    videos.forEach(video => {
+      if (video.status === 'completed' && 
+          video.id && 
+          !videoThumbnails[video.id] && 
+          !video.thumbnailUrl &&
+          isValidVideoUrl(video.url) &&
+          !isReplicateUrlExpired(video.url, video.createdAt)) {
+        // Generate thumbnail from URL in background
+        generateThumbnailFromUrl(video.url, video.id)
+      }
+    })
+  }, [videos, videoThumbnails, generateThumbnailFromUrl])
+
+  // Load existing thumbnailUrl from video objects
+  useEffect(() => {
+    videos.forEach(video => {
+      if (video.id && video.thumbnailUrl && !videoThumbnails[video.id]) {
+        setVideoThumbnails(prev => ({
+          ...prev,
+          [video.id]: video.thumbnailUrl!
+        }))
+        // Also cache it
+        setCachedThumbnail(video.id, video.thumbnailUrl)
+      }
+    })
+  }, [videos, videoThumbnails, setCachedThumbnail])
 
   // Organize videos by status
   const organizedVideos = useMemo(() => {
@@ -49,38 +188,16 @@ export function VideoGallery({ videos, onVideoClick, onVideoDelete, onCancelVide
     const uniqueVideos = Array.from(new Map(validVideos.map(v => [v.id, v])).values())
 
     const generating = uniqueVideos.filter(v => v.status === 'generating')
-    const completed = uniqueVideos.filter(v => v.status === 'completed')
-    const failed = uniqueVideos.filter(v => v.status === 'failed')
+    const completed = uniqueVideos.filter(v => v.status === 'completed' || v.status === 'failed')
 
-    return { generating, completed, failed }
+    // Sort with most recent first for both groups
+    generating.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    completed.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+    return [...generating, ...completed]
   }, [videos])
 
-  const handleDownload = async (video: GeneratedVideo, e: React.MouseEvent) => {
-    e.stopPropagation()
-
-    try {
-      const response = await fetch(video.url)
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `video-${video.id}.mp4`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-    } catch (error) {
-      console.error('Error downloading video:', error)
-    }
-  }
-
   const renderVideoCard = (video: GeneratedVideo) => {
-    // Enhanced validation for video object
-    if (!video) {
-      console.error('[VideoGallery] Attempted to render null/undefined video')
-      return null
-    }
-
     if (!video.id) {
       console.error('[VideoGallery] Attempted to render video without ID:', video)
       return null
@@ -90,16 +207,60 @@ export function VideoGallery({ videos, onVideoClick, onVideoDelete, onCancelVide
       console.warn('[VideoGallery] Video missing prompt:', video.id)
     }
 
-    // Don't render videos with invalid URLs in completed state
-    if (video.status === 'completed' && !isValidVideoUrl(video.url)) {
-      console.warn('[VideoGallery] Skipping video with invalid URL:', video.id, video.url)
-      return null
+    // Don't render videos with invalid or expired URLs in completed state
+    if (video.status === 'completed') {
+      if (!isValidVideoUrl(video.url)) {
+        console.warn('[VideoGallery] Skipping video with invalid URL:', video.id, video.url)
+        return null
+      }
+      
+      // Check if Replicate URL is expired
+      if (isReplicateUrlExpired(video.url, video.createdAt)) {
+        console.warn('[VideoGallery] Video has expired Replicate URL:', video.id)
+        // Show expired state instead of skipping entirely
+        return (
+          <div className="relative group cursor-pointer">
+            <div className="aspect-video bg-gray-900 rounded-lg flex flex-col items-center justify-center border border-gray-700 relative group">
+              <Clock className="h-8 w-8 text-gray-400 mb-2" />
+              <p className="text-sm text-gray-400 font-medium">Video Expired</p>
+              <p className="text-xs text-gray-500 mt-1 px-4 text-center">
+                Replicate URLs expire after 24 hours
+              </p>
+              
+              {/* Delete button for expired videos */}
+              {onVideoDelete && (
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  className="absolute top-2 right-2 h-6 w-6 bg-black/60 hover:bg-red-600/80 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onVideoDelete(video.id)
+                  }}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
+          </div>
+        )
+      }
     }
 
     return (
       <div
         className="relative group cursor-pointer"
-        onMouseEnter={() => setHoveredVideo(video.id)}
+        onMouseEnter={() => {
+          // Only try to load video if URL is not expired
+          if (!isReplicateUrlExpired(video.url, video.createdAt)) {
+            setHoveredVideo(video.id)
+            // Start loading the video when hover begins
+            const videoEl = document.querySelector(`video[data-video-id="${video.id}"]`) as HTMLVideoElement
+            if (videoEl && videoEl.paused) {
+              videoEl.load()
+            }
+          }
+        }}
         onMouseLeave={() => setHoveredVideo(null)}
       >
         {video.status === 'generating' ? (
@@ -143,128 +304,128 @@ export function VideoGallery({ videos, onVideoClick, onVideoDelete, onCancelVide
             }}
           >
             {isValidVideoUrl(video.url) ? (
-              <video
-                src={video.url}
-                className="w-full h-full object-cover"
-                muted
-                loop
-                playsInline
-                poster={video.thumbnailUrl || undefined}
-              onLoadStart={() => {
-                console.log(`[VideoGallery] Video loading started:`, {
-                  id: video.id,
-                  url: video.url,
-                  status: video.status
-                });
+              <>
+                {/* Always show thumbnail as background */}
+                {(videoThumbnails[video.id] || video.thumbnailUrl) && (
+                  <img
+                    src={videoThumbnails[video.id] || video.thumbnailUrl}
+                    alt={video.prompt}
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                )}
+                
+                {/* Show placeholder if no thumbnail yet */}
+                {!videoThumbnails[video.id] && !video.thumbnailUrl && (
+                  <div className="absolute inset-0 bg-gray-800 flex items-center justify-center">
+                    {thumbnailGenerating.has(video.id) ? (
+                      <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+                    ) : (
+                      <VideoIcon className="h-12 w-12 text-gray-600" />
+                    )}
+                  </div>
+                )}
+                
+                <video
+                  data-video-id={video.id}
+                  ref={(el) => {
+                    if (el && !videoThumbnails[video.id] && !video.thumbnailUrl) {
+                      // Set up enhanced thumbnail generation
+                      el.preload = 'metadata'
+                      
+                      const attemptThumbnailGeneration = async () => {
+                        await generateThumbnail(el, video.id)
+                      }
+                      
+                      // Try multiple events for better compatibility
+                      el.addEventListener('loadedmetadata', attemptThumbnailGeneration)
+                      el.addEventListener('loadeddata', attemptThumbnailGeneration)
+                      el.addEventListener('canplay', attemptThumbnailGeneration)
+                      
+                      // Load video to trigger events
+                      el.load()
+                    }
+                  }}
+                  src={video.permanentUrl || video.url}
+                  className={cn(
+                    "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
+                    hoveredVideo === video.id ? "opacity-100 z-10" : "opacity-0 z-0"
+                  )}
+                  style={{ display: hoveredVideo === video.id ? 'block' : 'none' }}
+                  muted
+                  loop
+                  playsInline
+                  preload="none"
+                  onLoadStart={() => {
+                    setLoadingVideos(prev => new Set(prev).add(video.id));
 
-                setLoadingVideos(prev => new Set(prev).add(video.id));
+                    // Set a timeout to remove from loading after 10 seconds
+                    const timeout = setTimeout(() => {
+                      setLoadingVideos(prev => {
+                        const next = new Set(prev);
+                        next.delete(video.id);
+                        return next;
+                      });
+                      loadingTimeouts.current.delete(video.id);
+                    }, 10000);
 
-                // Set a timeout to remove from loading after 10 seconds
-                const timeout = setTimeout(() => {
-                  console.warn(`[VideoGallery] Video loading timeout:`, video.id);
-                  setLoadingVideos(prev => {
-                    const next = new Set(prev);
-                    next.delete(video.id);
-                    return next;
-                  });
-                  loadingTimeouts.current.delete(video.id);
-                }, 10000);
+                    loadingTimeouts.current.set(video.id, timeout);
+                  }}
+                  onCanPlay={() => {
+                    // Clear the loading timeout
+                    const timeout = loadingTimeouts.current.get(video.id);
+                    if (timeout) {
+                      clearTimeout(timeout);
+                      loadingTimeouts.current.delete(video.id);
+                    }
 
-                loadingTimeouts.current.set(video.id, timeout);
-              }}
-              onCanPlay={() => {
-                console.log(`[VideoGallery] Video can play:`, video.id);
-
-                // Clear the loading timeout
-                const timeout = loadingTimeouts.current.get(video.id);
-                if (timeout) {
-                  clearTimeout(timeout);
-                  loadingTimeouts.current.delete(video.id);
-                }
-
-                setLoadingVideos(prev => {
-                  const next = new Set(prev);
-                  next.delete(video.id);
-                  return next;
-                });
-              }}
-              preload="metadata"
-              onError={(e) => {
-                const target = e.currentTarget;
-
-                // Safe error logging with proper validation
-                try {
-                  const videoInfo = {
-                    id: video?.id || 'MISSING_ID',
-                    url: video?.url || 'MISSING_URL',
-                    status: video?.status || 'MISSING_STATUS',
-                    prompt: video?.prompt ? video.prompt.substring(0, 50) + '...' : 'MISSING_PROMPT',
-                    hasValidVideo: !!video,
-                    videoKeys: video ? Object.keys(video) : [],
-                    errorMessage: 'Failed to load video',
-                    readyState: target.readyState,
-                    networkState: target.networkState,
-                    error: target.error?.message || 'Unknown error'
-                  };
-
-                  console.error('[VideoGallery] Video failed to load:', JSON.stringify(videoInfo, null, 2));
-
-                  // Additional validation logging
-                  if (!video) {
-                    console.error('[VideoGallery] Video object is null/undefined');
-                    return;
-                  }
-
-                  if (!video.id) {
-                    console.error('[VideoGallery] Video missing ID:', {
-                      videoType: typeof video,
-                      videoKeys: Object.keys(video || {}),
-                      video: video
+                    setLoadingVideos(prev => {
+                      const next = new Set(prev);
+                      next.delete(video.id);
+                      return next;
                     });
-                    return;
-                  }
+                  }}
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    const errorCode = target.error?.code;
+                    const networkState = target.networkState;
+                    const readyState = target.readyState;
 
-                  if (!video.url) {
-                    console.error('[VideoGallery] Video missing URL:', {
+                    // Only log basic error info, not the entire video object
+                    console.warn(`[VideoGallery] Video failed to load:`, {
                       id: video.id,
-                      status: video.status,
-                      hasUrl: !!video.url,
-                      urlType: typeof video.url
+                      errorCode,
+                      networkState,
+                      readyState,
+                      url: video.url?.substring(0, 50) + '...'
                     });
-                    return;
-                  }
-                } catch (loggingError) {
-                  console.error('[VideoGallery] Error in video error logging:', loggingError);
-                  console.error('[VideoGallery] Original video object:', video);
-                }
 
-                // Remove from loading state on error
-                setLoadingVideos(prev => {
-                  const next = new Set(prev);
-                  next.delete(video.id);
-                  return next;
-                });
+                    setLoadingVideos(prev => {
+                      const next = new Set(prev);
+                      next.delete(video.id);
+                      return next;
+                    });
 
-                // Clear timeout if exists
-                const timeout = loadingTimeouts.current.get(video.id);
-                if (timeout) {
-                  clearTimeout(timeout);
-                  loadingTimeouts.current.delete(video.id);
-                }
+                    // Clear timeout if exists
+                    const timeout = loadingTimeouts.current.get(video.id);
+                    if (timeout) {
+                      clearTimeout(timeout);
+                      loadingTimeouts.current.delete(video.id);
+                    }
 
-                // Don't retry for invalid URLs
-                if (!isValidVideoUrl(video.url)) {
-                  return;
-                }
+                    // Don't retry for invalid URLs
+                    if (!isValidVideoUrl(video.url)) {
+                      return;
+                    }
 
-                // Retry with direct URL if video fails to load
-                if (!target.dataset.retried) {
-                  target.dataset.retried = 'true';
-                  target.load();
-                }
-              }}
-              {...(hoveredVideo === video.id && { autoPlay: true })}
-            />
+                    // Retry with direct URL if video fails to load
+                    if (!target.dataset.retried) {
+                      target.dataset.retried = 'true';
+                      target.load();
+                    }
+                  }}
+                  {...(hoveredVideo === video.id && { autoPlay: true })}
+                />
+              </>
             ) : (
               // Invalid URL display
               <div className="absolute inset-0 bg-red-900/20 flex flex-col items-center justify-center p-4">
@@ -276,19 +437,9 @@ export function VideoGallery({ videos, onVideoClick, onVideoDelete, onCancelVide
               </div>
             )}
 
-            {/* Thumbnail overlay for when not hovering */}
-            {hoveredVideo !== video.id && video.thumbnailUrl && video.thumbnailUrl !== video.url && (
-              <img
-                src={video.thumbnailUrl}
-                alt={video.prompt}
-                className="absolute inset-0 w-full h-full object-cover"
-                onError={(e) => { e.currentTarget.style.display = 'none' }}
-              />
-            )}
-
-            {/* Loading overlay */}
-            {loadingVideos.has(video.id) && (
-              <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+            {/* Loading overlay - show when hovering and video is loading */}
+            {(loadingVideos.has(video.id) || (hoveredVideo === video.id && !videoThumbnails[video.id] && !video.thumbnailUrl)) && (
+              <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-20">
                 <Loader2 className="h-8 w-8 text-white animate-spin" />
               </div>
             )}
@@ -298,13 +449,42 @@ export function VideoGallery({ videos, onVideoClick, onVideoDelete, onCancelVide
               <Play className="h-12 w-12 text-white drop-shadow-lg" />
             </div>
 
-            {/* Action buttons */}
+            {/* Duration badge */}
+            {video.duration && (
+              <div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-2 py-1 rounded">
+                {video.duration}s
+              </div>
+            )}
+
+            {/* Actions overlay */}
             <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              {/* Regenerate thumbnail button */}
+              {!thumbnailGenerating.has(video.id) && (
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  className="h-8 w-8 bg-blue-600/80 hover:bg-blue-700/80"
+                  onClick={async (e) => {
+                    e.stopPropagation()
+                    // Try to regenerate from URL first
+                    await generateThumbnailFromUrl(video.url, video.id)
+                  }}
+                  title="Regenerate Thumbnail"
+                >
+                  <RotateCw className="h-4 w-4" />
+                </Button>
+              )}
               <Button
                 size="icon"
                 variant="secondary"
                 className="h-8 w-8 bg-black/60 hover:bg-black/80"
-                onClick={(e) => handleDownload(video, e)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  const link = document.createElement('a')
+                  link.href = video.url
+                  link.download = `video-${video.id}.mp4`
+                  link.click()
+                }}
               >
                 <Download className="h-4 w-4" />
               </Button>
@@ -312,10 +492,12 @@ export function VideoGallery({ videos, onVideoClick, onVideoDelete, onCancelVide
                 <Button
                   size="icon"
                   variant="secondary"
-                  className="h-8 w-8 bg-black/60 hover:bg-black/80"
+                  className="h-8 w-8 bg-black/60 hover:bg-red-600/80"
                   onClick={(e) => {
                     e.stopPropagation()
                     onVideoDelete(video.id)
+                    // Also remove from thumbnail cache
+                    removeCachedThumbnail(video.id)
                   }}
                 >
                   <X className="h-4 w-4" />
@@ -325,144 +507,53 @@ export function VideoGallery({ videos, onVideoClick, onVideoDelete, onCancelVide
           </div>
         )}
 
-        {/* Video info */}
-        <div className="mt-2">
+        {/* Title below video */}
+        <div className="mt-2 px-1">
           <p className="text-sm text-gray-300 truncate" title={video.prompt}>
             {video.prompt}
           </p>
           <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs text-gray-500">
-              {video.duration}s • {video.aspectRatio}
-            </span>
-            <span className={cn(
-              "text-xs px-1.5 py-0.5 rounded",
-              video.model === 'pro'
-                ? "bg-purple-500/20 text-purple-300"
-                : "bg-blue-500/20 text-blue-300"
-            )}>
-              {video.model === 'pro' ? 'Pro' : 'Standard'}
-            </span>
-            {video.sourceImage && (
-              <span className="text-xs text-gray-500">• From image</span>
+            {video.status === 'completed' && (
+              <div className="flex items-center gap-1">
+                <CheckCircle className="h-3 w-3 text-green-500" />
+                <span className="text-xs text-gray-500">Completed</span>
+              </div>
             )}
-            {video.status === 'completed' && video.finalElapsedTime && (
-              <span className="text-xs text-green-400">
-                • Generated in {Math.floor(video.finalElapsedTime / 60)}:{(video.finalElapsedTime % 60).toString().padStart(2, '0')}
-              </span>
+            {video.model && (
+              <span className="text-xs text-gray-500 capitalize">{video.model}</span>
             )}
           </div>
-        </div>
-      </div>
-    )
-  }
-
-  const renderSectionHeader = (title: string, count: number, icon: React.ReactNode, description?: string) => {
-    if (count === 0) return null
-
-    return (
-      <div className="mb-4">
-        <div className="flex items-center gap-2 mb-2">
-          {icon}
-          <h3 className="text-lg font-semibold text-white">
-            {title} ({count})
-          </h3>
-        </div>
-        {description && (
-          <p className="text-sm text-gray-400 mb-3">{description}</p>
-        )}
-      </div>
-    )
-  }
-
-  if (videos.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center p-8">
-          <div className="mx-auto h-16 w-16 rounded-2xl bg-[#2B2B2B] flex items-center justify-center mb-6">
-            <VideoIcon className="h-8 w-8 text-white" />
-          </div>
-          <h3 className="text-xl font-semibold text-white mb-2">Video Generation</h3>
-          <p className="text-[#B0B0B0] max-w-md">
-            Generate videos from text prompts or animate your images. Try "Generate a video of..." or click Animate on any image.
-          </p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className={cn("p-6 space-y-8", className)} data-testid="video-gallery">
-      {/* Generating Videos Section */}
-      {organizedVideos.generating.length > 0 && (
-        <div>
-          {renderSectionHeader(
-            "Generating",
-            organizedVideos.generating.length,
-            <Clock className="h-5 w-5 text-blue-400" />,
-            "Videos currently being generated. This typically takes 2-8 minutes."
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {organizedVideos.generating.map((video) => {
-              const card = renderVideoCard(video)
-              return card ? (
-                <div key={video.id}>
-                  {card}
-                </div>
-              ) : null
-            })}
+    <>
+      <div className={cn("grid grid-cols-2 gap-4 p-4", className)}>
+        {organizedVideos.length === 0 ? (
+          <div className="col-span-2 flex flex-col items-center justify-center py-12 text-gray-500">
+            <VideoIcon className="h-12 w-12 mb-4 opacity-50" />
+            <p className="text-sm">No videos yet</p>
+            <p className="text-xs mt-1">Generate videos from images or text prompts</p>
           </div>
-        </div>
-      )}
+        ) : (
+          organizedVideos.map((video) => (
+            <div key={video.id}>
+              {renderVideoCard(video)}
+            </div>
+          ))
+        )}
+      </div>
 
-      {/* Completed Videos Section */}
-      {organizedVideos.completed.length > 0 && (
-        <div>
-          {renderSectionHeader(
-            "Completed",
-            organizedVideos.completed.length,
-            <CheckCircle className="h-5 w-5 text-green-400" />,
-            "Successfully generated videos ready to view and download."
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {organizedVideos.completed.map((video) => {
-              const card = renderVideoCard(video)
-              return card ? (
-                <div key={video.id}>
-                  {card}
-                </div>
-              ) : null
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Failed Videos Section */}
-      {organizedVideos.failed.length > 0 && (
-        <div>
-          {renderSectionHeader(
-            "Failed",
-            organizedVideos.failed.length,
-            <AlertCircle className="h-5 w-5 text-red-400" />,
-            "Videos that failed to generate. You can delete these or try generating again."
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {organizedVideos.failed.map((video) => {
-              const card = renderVideoCard(video)
-              return card ? (
-                <div key={video.id}>
-                  {card}
-                </div>
-              ) : null
-            })}
-          </div>
-        </div>
-      )}
-
+      {/* Video Player Modal */}
       <VideoPlayerModal
         video={selectedVideo}
         isOpen={!!selectedVideo}
         onClose={() => setSelectedVideo(null)}
+        onAnalyze={onAnalyze}
+        onTranscribe={onTranscribe}
       />
-    </div>
+    </>
   )
 }

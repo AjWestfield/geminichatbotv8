@@ -21,7 +21,8 @@ This is a stable, production-ready version with all features working. A complete
 - **Enhanced TTS**: Multi-speaker support with Dia model
 - **Video Generation**: Text-to-video with Kling and HunyuanVideo
 - **Social Media Downloads**: Cookie-based authentication for protected content
-- **MCP Servers**: Desktop Commander, Firecrawl, and Perplexity integrations
+- **MCP Servers**: Desktop Commander, Firecrawl, Perplexity, and Zapier integrations
+- **Social Media Publishing**: Post to Facebook, Instagram, and YouTube via Zapier MCP
 
 ## 🚀 Quick Start
 
@@ -116,6 +117,7 @@ Open [http://localhost:3000](http://localhost:3000) and start chatting! 🎉
   - Desktop Commander: File system and terminal access
   - Firecrawl: Web content extraction
   - Perplexity: Advanced web search
+  - Zapier: Social media management (Facebook, Instagram, YouTube)
 - **Sequential Thinking**: Advanced reasoning for complex tasks
 - **GitHub Integration**: Repository management
 - **Database Tools**: Direct SQL query execution
@@ -173,6 +175,13 @@ Open [http://localhost:3000](http://localhost:3000) and start chatting! 🎉
 - [x] Deep research mode
 - [x] Content extraction
 - [x] Social media support
+
+### Social Media Features
+- [x] Multi-platform publishing (Facebook, Instagram, YouTube)
+- [x] Scheduled posting
+- [x] Cross-platform content adaptation
+- [x] Analytics and insights
+- [x] Account management via Zapier
 
 ### Developer Features
 - [x] MCP server integration

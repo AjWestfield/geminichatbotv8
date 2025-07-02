@@ -1,5 +1,6 @@
 import { useChat as useAiChat, type UseChatOptions, type Message } from "ai/react"
 import { useCallback, useEffect, useRef, useState, useMemo } from "react"
+import { containsTTSCommand, extractTTSContent } from "@/lib/wavespeed-tts-handler"
 
 interface MCPToolCall {
   id: string
@@ -320,6 +321,19 @@ export function useChatWithTools(options: UseChatOptions & {
   } | null>(null)
   
   // TTS generation state
+  const [ttsGenerationState, setTtsGenerationState] = useState<{
+    isActive: boolean
+    phase: string
+    progress: number
+    text?: string
+    voiceName?: string
+    estimatedDuration?: string
+    startTime?: number
+  }>({
+    isActive: false,
+    phase: 'initializing',
+    progress: 0
+  })
   
   // Deep research state
   const [deepResearchState, setDeepResearchState] = useState<{
@@ -340,6 +354,44 @@ export function useChatWithTools(options: UseChatOptions & {
     experimental_onData: (data: any) => {
       console.log('[useChatWithTools] Received data:', data)
       
+      // Check for TTS generation start signal
+      if (data?.ttsGenerationStarted) {
+        console.log('[useChatWithTools] TTS generation started:', data)
+        setTtsGenerationState({
+          isActive: true,
+          phase: 'initializing',
+          progress: 0,
+          text: data.text || '',
+          voiceName: data.voiceName || 'Eva',
+          estimatedDuration: data.estimatedDuration,
+          startTime: Date.now()
+        })
+      }
+      
+      // Check for TTS generation progress updates
+      if (data?.ttsGenerationPhase || data?.ttsGenerationProgress !== undefined) {
+        console.log('[useChatWithTools] TTS generation progress:', {
+          phase: data.ttsGenerationPhase,
+          progress: data.ttsGenerationProgress
+        })
+        setTtsGenerationState(prev => ({
+          ...prev,
+          phase: data.ttsGenerationPhase || prev.phase,
+          progress: data.ttsGenerationProgress ?? prev.progress,
+          isActive: data.ttsGenerationProgress < 100
+        }))
+      }
+      
+      // Check for TTS generation completion
+      if (data?.ttsGenerationCompleted) {
+        console.log('[useChatWithTools] TTS generation completed')
+        setTtsGenerationState(prev => ({
+          ...prev,
+          isActive: false,
+          phase: 'completed',
+          progress: 100
+        }))
+      }
       
       // Check for deep research start signal
       if (data?.deepResearchStarted) {
@@ -426,12 +478,146 @@ export function useChatWithTools(options: UseChatOptions & {
     }
   }, [messagesWithTools])
   
+  // Monitor for todo tool executions to trigger autonomous task execution
+  useEffect(() => {
+    if (!messagesWithTools || messagesWithTools.length === 0) return
+    const lastMessage = messagesWithTools[messagesWithTools.length - 1]
+    if (!lastMessage || !lastMessage.toolCalls) return
+    
+    // Check if any todo_write tools were completed
+    const completedTodoWrite = lastMessage.toolCalls.find(
+      tc => tc.tool === 'todo_write' && tc.status === 'completed' && tc.result
+    )
+    
+    if (completedTodoWrite) {
+      console.log('[use-chat-with-tools] Todo write completed, checking for autonomous execution')
+      
+      // Import task executor and start execution
+      import('@/lib/task-executor').then(({ taskExecutor, startAutonomousExecution }) => {
+        const status = taskExecutor.getStatus()
+        if (!status.isExecuting) {
+          console.log('[use-chat-with-tools] Starting autonomous task execution')
+          startAutonomousExecution(
+            (taskId, status, message) => {
+              console.log(`[Task ${taskId}] ${status}: ${message}`)
+            },
+            (stats) => {
+              console.log('[use-chat-with-tools] Execution complete:', stats)
+            }
+          ).catch(err => {
+            console.error('[use-chat-with-tools] Task execution error:', err)
+          })
+        }
+      })
+    }
+  }, [messagesWithTools])
+
+  // Monitor for TTS requests in user messages to activate TTS generation state
+  useEffect(() => {
+    if (!messagesWithTools || messagesWithTools.length === 0) return
+    const lastMessage = messagesWithTools[messagesWithTools.length - 1]
+    
+    // Check if it's a user message with TTS command
+    if (lastMessage?.role === 'user' && lastMessage.content && containsTTSCommand(lastMessage.content)) {
+      // Only activate if not already active
+      if (!ttsGenerationState.isActive) {
+        console.log('[use-chat-with-tools] TTS command detected, activating TTS generation state')
+        const ttsContent = extractTTSContent(lastMessage.content)
+        const wordCount = ttsContent.text.split(/\s+/).length
+        const estimatedSeconds = Math.max(10, Math.ceil(wordCount / 2.5))
+        const estimatedDuration = estimatedSeconds < 60 ? `${estimatedSeconds}s` : `${Math.ceil(estimatedSeconds / 60)}m`
+        
+        setTtsGenerationState({
+          isActive: true,
+          phase: 'Initializing WaveSpeed API',
+          progress: 0,
+          text: ttsContent.text,
+          voiceName: ttsContent.multiSpeaker ? 'Multi-Speaker' : (ttsContent.voiceName || 'Eva'),
+          estimatedDuration,
+          startTime: Date.now()
+        })
+      }
+    }
+    
+    // ENHANCED: Check if it's an assistant message that indicates TTS completion
+    if (lastMessage?.role === 'assistant' && lastMessage.content && ttsGenerationState.isActive) {
+      // Look for TTS completion indicators in the content
+      const hasTTSCompletion = lastMessage.content.includes('TTS_GENERATION_COMPLETED') || 
+                               lastMessage.content.includes('audio has been generated') ||
+                               lastMessage.content.includes('audio generation is complete')
+      
+      if (hasTTSCompletion) {
+        console.log('[use-chat-with-tools] TTS completion detected, deactivating TTS generation state')
+        setTtsGenerationState(prev => ({
+          ...prev,
+          isActive: false,
+          phase: 'Audio generation complete',
+          progress: 100
+        }))
+      }
+    }
+  }, [messagesWithTools, ttsGenerationState.isActive])
+
+  // ENHANCED: Add real-time progress simulation for TTS generation
+  useEffect(() => {
+    let progressInterval: NodeJS.Timeout | null = null
+    
+    if (ttsGenerationState.isActive && ttsGenerationState.startTime) {
+      const simulateProgress = () => {
+        const elapsed = Date.now() - (ttsGenerationState.startTime || Date.now())
+        const elapsedSeconds = elapsed / 1000
+        
+        // Define realistic phase transitions based on elapsed time
+        let newPhase = ttsGenerationState.phase
+        let newProgress = ttsGenerationState.progress
+        
+        if (elapsedSeconds < 2) {
+          newPhase = 'Initializing WaveSpeed API'
+          newProgress = Math.min(15, (elapsedSeconds / 2) * 15)
+        } else if (elapsedSeconds < 5) {
+          newPhase = 'Processing text input'
+          newProgress = Math.min(30, 15 + ((elapsedSeconds - 2) / 3) * 15)
+        } else if (elapsedSeconds < 8) {
+          newPhase = 'Generating speech synthesis'
+          newProgress = Math.min(60, 30 + ((elapsedSeconds - 5) / 3) * 30)
+        } else if (elapsedSeconds < 12) {
+          newPhase = 'Processing audio output'
+          newProgress = Math.min(85, 60 + ((elapsedSeconds - 8) / 4) * 25)
+        } else {
+          newPhase = 'Finalizing audio file'
+          newProgress = Math.min(95, 85 + ((elapsedSeconds - 12) / 3) * 10)
+        }
+        
+        // Only update if values have changed to avoid unnecessary re-renders
+        if (newPhase !== ttsGenerationState.phase || Math.floor(newProgress) !== Math.floor(ttsGenerationState.progress)) {
+          setTtsGenerationState(prev => ({
+            ...prev,
+            phase: newPhase,
+            progress: newProgress
+          }))
+        }
+      }
+      
+      // Update progress every 500ms for smooth animation
+      progressInterval = setInterval(simulateProgress, 500)
+      
+      // Run initial simulation immediately
+      simulateProgress()
+    }
+    
+    return () => {
+      if (progressInterval) {
+        clearInterval(progressInterval)
+      }
+    }
+  }, [ttsGenerationState.isActive, ttsGenerationState.startTime, ttsGenerationState.phase, ttsGenerationState.progress])
   
   return {
     ...chatResult,
     messages: messagesWithTools,
     mcpToolExecuting: currentToolExecution,
     deepResearchState,
+    ttsGenerationState,
     append: chatResult.append // Explicitly expose append method
   }
 }

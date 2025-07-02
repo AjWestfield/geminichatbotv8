@@ -1,0 +1,18 @@
+# Core dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-dotenv>=1.0.0
+websockets>=12.0
+
+# LLM providers (install at least one)
+langchain-anthropic>=0.1.0  # For Claude models
+langchain-openai>=0.1.0     # For OpenAI GPT models
+langchain-google-genai>=1.0.0  # For Google Gemini models
+
+# Playwright for browser automation
+playwright>=1.40.0
+
+# VNC browser service dependencies
+Pillow>=10.1.0  # For image processing
+numpy>=1.26.2   # For array operations
+aiofiles>=23.2.1  # For async file operations

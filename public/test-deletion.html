@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Image Deletion</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #1a1a1a;
+      color: #fff;
+    }
+    button {
+      background: #4a5568;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      margin: 5px;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    button:hover {
+      background: #2d3748;
+    }
+    .log {
+      background: #2d3748;
+      padding: 15px;
+      margin: 10px 0;
+      border-radius: 5px;
+      white-space: pre-wrap;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .success { color: #48bb78; }
+    .error { color: #f56565; }
+  </style>
+</head>
+<body>
+  <h1>Image Deletion Test</h1>
+  
+  <div>
+    <button onclick="setupTestData()">1. Setup Test Data</button>
+    <button onclick="testLocalStorageDelete()">2. Test localStorage Delete</button>
+    <button onclick="testApiDelete()">3. Test API Delete</button>
+    <button onclick="clearAllData()">4. Clear All Data</button>
+  </div>
+  
+  <div id="log" class="log"></div>
+
+  <script>
+    const log = document.getElementById('log');
+    
+    function addLog(message, type = '') {
+      const timestamp = new Date().toLocaleTimeString();
+      const className = type ? ` class="${type}"` : '';
+      log.innerHTML += `<div${className}>[${timestamp}] ${message}</div>`;
+      log.scrollTop = log.scrollHeight;
+    }
+    
+    // Setup test data
+    function setupTestData() {
+      addLog('Setting up test data...');
+      
+      const testImages = [
+        {
+          id: 'img_test1',
+          url: 'https://example.com/image1.png',
+          prompt: 'Test image 1',
+          timestamp: new Date().toISOString(),
+          quality: 'standard',
+          model: 'dall-e-3'
+        },
+        {
+          id: 'img_test2',
+          url: 'https://example.com/image2.png',
+          prompt: 'Test image 2',
+          timestamp: new Date().toISOString(),
+          quality: 'hd',
+          model: 'dall-e-3'
+        },
+        {
+          id: 'img_test3',
+          url: 'https://blob.vercel-storage.com/images/test3.png',
+          prompt: 'Test image 3 (blob storage)',
+          timestamp: new Date().toISOString(),
+          quality: 'standard',
+          model: 'dall-e-3'
+        }
+      ];
+      
+      localStorage.setItem('generatedImages', JSON.stringify(testImages));
+      addLog(`✓ Saved ${testImages.length} test images to localStorage`, 'success');
+      
+      // Show current images
+      showCurrentImages();
+    }
+    
+    // Show current images in localStorage
+    function showCurrentImages() {
+      const images = JSON.parse(localStorage.getItem('generatedImages') || '[]');
+      addLog(`\nCurrent images in localStorage (${images.length}):`);
+      images.forEach(img => {
+        addLog(`  - ${img.id}: ${img.prompt}`);
+      });
+    }
+    
+    // Test localStorage deletion
+    function testLocalStorageDelete() {
+      addLog('\n=== Testing localStorage deletion ===');
+      
+      const deleteImageFromLocalStorage = (imageId) => {
+        try {
+          const stored = localStorage.getItem('generatedImages');
+          if (!stored) {
+            addLog('No images found in localStorage', 'error');
+            return false;
+          }
+
+          const images = JSON.parse(stored);
+          const filteredImages = images.filter(img => img.id !== imageId);
+
+          if (images.length === filteredImages.length) {
+            addLog(`Image not found: ${imageId}`, 'error');
+            return false;
+          }
+
+          localStorage.setItem('generatedImages', JSON.stringify(filteredImages));
+          addLog(`✓ Successfully deleted image: ${imageId}`, 'success');
+          return true;
+        } catch (error) {
+          addLog(`Error deleting image: ${error.message}`, 'error');
+          return false;
+        }
+      };
+      
+      // Test 1: Delete existing image
+      const result1 = deleteImageFromLocalStorage('img_test1');
+      addLog(`Delete result for img_test1: ${result1}`);
+      
+      // Test 2: Try to delete non-existent image
+      const result2 = deleteImageFromLocalStorage('img_nonexistent');
+      addLog(`Delete result for non-existent image: ${result2} (should be false)`);
+      
+      showCurrentImages();
+    }
+    
+    // Test API deletion
+    async function testApiDelete() {
+      addLog('\n=== Testing API deletion ===');
+      
+      try {
+        // Test with img_test2
+        addLog('Calling DELETE /api/images/img_test2...');
+        const response = await fetch('/api/images/img_test2', {
+          method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        addLog(`Response status: ${response.status}`);
+        addLog(`Response data: ${JSON.stringify(data, null, 2)}`);
+        
+        if (response.ok) {
+          addLog('✓ API deletion successful', 'success');
+        } else {
+          addLog(`✗ API deletion failed: ${data.error}`, 'error');
+        }
+      } catch (error) {
+        addLog(`✗ API deletion error: ${error.message}`, 'error');
+      }
+    }
+    
+    // Clear all test data
+    function clearAllData() {
+      addLog('\nClearing all test data...');
+      localStorage.removeItem('generatedImages');
+      addLog('✓ All data cleared', 'success');
+      showCurrentImages();
+    }
+    
+    // Initial setup
+    addLog('Image Deletion Test Page Ready', 'success');
+    addLog('Click the buttons in order to test the deletion functionality');
+    showCurrentImages();
+  </script>
+</body>
+</html>

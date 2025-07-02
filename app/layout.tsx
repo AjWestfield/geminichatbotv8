@@ -3,10 +3,11 @@ import "./globals.css"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import { ThemeProvider } from "@/components/theme-provider"
-import { Toaster } from "@/components/ui/toaster"
-import { Toaster as Sonner } from "@/components/ui/sonner"
+import { Toaster } from "@/components/ui/sonner"
 import { DebugSettingsPanel } from "@/components/debug-settings-panel"
 import { SettingsProvider } from "@/lib/contexts/settings-context"
+import { ChunkErrorBoundary } from "@/components/chunk-error-boundary"
+import { BrowserServiceAutoStarter } from "@/components/browser-service-auto-starter"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -55,16 +56,18 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className} suppressHydrationWarning>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <SettingsProvider>
-            {children}
-            <Toaster />
-            <Sonner />
-            <DebugSettingsPanel />
-          </SettingsProvider>
-        </ThemeProvider>
-        {/* Debug script for image generation flow */}
-        <script src="/debug-image-flow.js" defer></script>
+        <ChunkErrorBoundary>
+          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+            <SettingsProvider>
+              {/* <BrowserServiceAutoStarter /> - Disabled for VNC browser service */}
+              {children}
+              <Toaster />
+              <DebugSettingsPanel />
+            </SettingsProvider>
+          </ThemeProvider>
+        </ChunkErrorBoundary>
+        {/* Debug script temporarily disabled - using proper fetch timeout instead */}
+        {/* <script src="/debug-image-flow.js" defer></script> */}
       </body>
     </html>
   )

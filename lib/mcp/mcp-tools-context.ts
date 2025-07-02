@@ -161,7 +161,7 @@ CRITICAL FORMATTING RULES:
 - NEVER use [TOOL_CODE] - this is WRONG and will cause errors
 - ALWAYS use [TOOL_CALL] and [/TOOL_CALL] - this is the ONLY correct format
 - ONLY use tools that are listed above in the available tools section
-- DO NOT invent tools like "TodoWrite", "Todo", or other non-existent tools
+- Use the exact tool names as provided (case-sensitive)
 
 IMPORTANT INSTRUCTIONS:
 - You MUST use tools when they are relevant to the user's request

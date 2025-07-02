@@ -82,16 +82,18 @@ export class MCPClientWrapper {
         try {
           const url = new URL(this.config.url);
           
-          // Add API key to URL if provided
-          if (this.config.apiKey) {
-            url.searchParams.set('api_key', this.config.apiKey);
-          }
+          // Don't add API key to URL - only use Authorization header
           
+          // All MCP servers use Bearer prefix, including Zapier
           this.transport = new StreamableHTTPClientTransport(url, {
             requestInit: {
               headers: {
                 'User-Agent': 'gemini-chatbot-v2/1.0.0',
-                ...(this.config.apiKey ? { 'Authorization': `Bearer ${this.config.apiKey}` } : {})
+                'Accept': 'application/json, text/event-stream',
+                'Content-Type': 'application/json',
+                ...(this.config.apiKey ? { 
+                  'Authorization': `Bearer ${this.config.apiKey}` 
+                } : {})
               }
             }
           });

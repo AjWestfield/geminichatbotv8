@@ -1,0 +1,42 @@
+{
+  "timestamp": "2025-06-25T07:01:58.843Z",
+  "imageGenerationResults": [
+    {
+      "model": "gpt-image-1",
+      "success": false,
+      "error": "request to http://localhost:3000/api/generate-image failed, reason: socket hang up",
+      "duration": 30012
+    },
+    {
+      "model": "flux-kontext-pro",
+      "success": true,
+      "images": 1,
+      "duration": 5333
+    },
+    {
+      "model": "flux-kontext-max",
+      "success": true,
+      "images": 1,
+      "duration": 9082
+    },
+    {
+      "model": "flux-dev-ultra-fast",
+      "success": true,
+      "images": 1,
+      "duration": 3688
+    }
+  ],
+  "chatApiResult": {
+    "success": false,
+    "error": "request to http://localhost:3000/api/chat failed, reason: socket hang up",
+    "duration": 30003
+  },
+  "summary": {
+    "totalTests": 4,
+    "successful": 3,
+    "failed": 1,
+    "timeouts": 0,
+    "longRunning": 1,
+    "clientTimeoutFixWorking": true
+  }
+}

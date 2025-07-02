@@ -5,6 +5,7 @@ import { FileAudio, Image as ImageIcon, Video } from "lucide-react"
 import React, { useState, useMemo, useRef } from "react"
 import { FilePreviewModal } from "./file-preview-modal"
 import { ImageFocusModal } from "./image-focus-modal"
+import { EnhancedVideoModal } from "./ui/enhanced-video-modal"
 import { Button } from "@/components/ui/button"
 import { MCPToolAnimation } from "./mcp-tool-animation"
 import { MCPToolResult } from "./mcp-tool-result"
@@ -361,6 +362,10 @@ function ChatMessage({
   const [upscalingImage, setUpscalingImage] = useState<MessageAttachment | null>(null)
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [showOptionsForAttachment, setShowOptionsForAttachment] = useState<string | null>(null)
+  const [enhancedVideoModal, setEnhancedVideoModal] = useState<{
+    isOpen: boolean
+    file: MessageAttachment | null
+  }>({ isOpen: false, file: null })
   const [clickedImageRect, setClickedImageRect] = useState<DOMRect | null>(null)
   const imageRefs = useRef<{ [key: string]: HTMLDivElement | null }>({})
   const [selectedAttachment, setSelectedAttachment] = useState<MessageAttachment | null>(null)
@@ -567,10 +572,10 @@ function ChatMessage({
       <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
         <div
           className={cn(
-            "max-w-[95%] rounded-xl px-3 py-2 sm:px-4 sm:py-3",
+            "max-w-[98%] rounded-xl px-3 py-2 sm:px-4 sm:py-3",
             isUser ? "bg-[#3C3C3C] text-white" : "bg-[#2B2B2B] text-white",
-            "sm:max-w-[85%] md:max-w-[80%] lg:max-w-[75%]",
-            "overflow-x-auto"
+            "sm:max-w-[95%] md:max-w-[92%] lg:max-w-[90%]",
+            "overflow-hidden"
           )}
         >
           {attachments && attachments.length > 0 && (
@@ -595,11 +600,41 @@ function ChatMessage({
                       <div className="mb-2 grid grid-cols-1 gap-2">
                         {videos.map((attachment) => {
                           const key = `${message.id}-${attachment.name}`
+
+                          // Debug log for video attachments
+                          console.log('[VIDEO ATTACHMENT DEBUG]', {
+                            name: attachment.name,
+                            contentType: attachment.contentType,
+                            hasUrl: !!attachment.url,
+                            url: attachment.url,
+                            hasVideoThumbnail: !!attachment.videoThumbnail,
+                            videoThumbnailLength: attachment.videoThumbnail?.length || 0,
+                            videoDuration: attachment.videoDuration,
+                            isInstagram: attachment.name.toLowerCase().includes('instagram')
+                          })
+
                           return (
                             <div
                               key={key}
                               className="relative cursor-pointer rounded-lg overflow-hidden bg-black/20 hover:bg-black/30 transition-colors group"
-                              onClick={() => setSelectedFile(attachment)}
+                              onClick={() => {
+                                // Use enhanced modal for Instagram videos, regular modal for others
+                                console.log('[VIDEO CLICK DEBUG] Video clicked:', {
+                                  name: attachment.name,
+                                  isInstagram: attachment.name.toLowerCase().includes('instagram'),
+                                  hasUrl: !!attachment.url,
+                                  url: attachment.url,
+                                  contentType: attachment.contentType
+                                })
+
+                                if (attachment.name.toLowerCase().includes('instagram')) {
+                                  console.log('[VIDEO CLICK DEBUG] Opening enhanced modal for Instagram video')
+                                  setEnhancedVideoModal({ isOpen: true, file: attachment })
+                                } else {
+                                  console.log('[VIDEO CLICK DEBUG] Opening regular modal for non-Instagram video')
+                                  setSelectedFile(attachment)
+                                }
+                              }}
                               title="Click to play video"
                             >
                               {attachment.videoThumbnail ? (
@@ -608,17 +643,37 @@ function ChatMessage({
                                     src={attachment.videoThumbnail}
                                     alt={`${attachment.name} thumbnail`}
                                     className="w-full h-auto max-h-64 object-cover"
+                                    onError={(e) => {
+                                      console.error('[THUMBNAIL ERROR] Failed to load thumbnail for:', attachment.name, {
+                                        thumbnailSrc: attachment.videoThumbnail,
+                                        thumbnailLength: attachment.videoThumbnail?.length || 0,
+                                        error: e
+                                      })
+                                    }}
+                                    onLoad={() => {
+                                      console.log('[THUMBNAIL SUCCESS] Loaded thumbnail for:', attachment.name, {
+                                        thumbnailLength: attachment.videoThumbnail?.length || 0
+                                      })
+                                    }}
                                   />
                                   <div className="absolute inset-0 flex items-center justify-center">
-                                    <div className="bg-black/60 rounded-full p-3">
+                                    <div className="bg-black/60 rounded-full p-3 hover:bg-black/70 transition-colors">
                                       <Video className="w-8 h-8 text-white drop-shadow-md" />
                                     </div>
                                   </div>
+                                  {/* Instagram branding for Instagram videos */}
+                                  {attachment.name.toLowerCase().includes('instagram') && (
+                                    <div className="absolute top-2 left-2 bg-gradient-to-r from-purple-500 to-pink-500 px-2 py-1 rounded-full">
+                                      <span className="text-xs text-white font-bold">Instagram</span>
+                                    </div>
+                                  )}
                                   {attachment.videoDuration && (
                                     <div className="absolute bottom-2 right-2 bg-black/70 px-2 py-1 rounded text-xs text-white">
                                       {formatVideoDuration(attachment.videoDuration)}
                                     </div>
                                   )}
+                                  {/* Enhanced hover overlay */}
+                                  <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors" />
                                 </div>
                               ) : (
                                 <div className="w-full h-40 bg-black/30 flex items-center justify-center">
@@ -644,8 +699,31 @@ function ChatMessage({
                                 </div>
                               )}
 
-                              <div className="p-2 text-xs text-gray-400">
-                                {attachment.name}
+                              <div className="p-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs text-gray-300 font-medium truncate">
+                                      {attachment.name}
+                                    </p>
+                                    {/* Show Instagram-specific metadata if available */}
+                                    {attachment.name.toLowerCase().includes('instagram') && (
+                                      <div className="flex items-center gap-2 mt-1">
+                                        <div className="w-4 h-4 rounded bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+                                          <span className="text-[8px] text-white font-bold">IG</span>
+                                        </div>
+                                        <span className="text-[10px] text-gray-400">
+                                          {attachment.name.toLowerCase().includes('reel') ? 'Instagram Reel' : 'Instagram Video'}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {attachment.videoDuration && (
+                                    <div className="text-[10px] text-gray-400 flex items-center gap-1">
+                                      <Video className="w-3 h-3" />
+                                      {formatVideoDuration(attachment.videoDuration)}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           )
@@ -701,6 +779,7 @@ function ChatMessage({
                                     {/* Options button overlay */}
                                     {onMultiImageOptionSelect && (
                                       <button
+                                        type="button"
                                         className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                                         onClick={(e) => {
                                           e.stopPropagation() // Prevent opening preview modal
@@ -783,7 +862,7 @@ function ChatMessage({
               })()}
             </div>
           )}
-          <div className="text-sm whitespace-pre-wrap">
+          <div className="text-sm whitespace-pre-wrap break-words">
             {(() => {
               // Use clean content if we have plan, otherwise use original content
               let contentToDisplay = message.content
@@ -1087,6 +1166,33 @@ function ChatMessage({
           undefined
         }
         imageRect={clickedImageRect || undefined}
+      />
+
+      {/* Enhanced Video Modal for Instagram videos */}
+      <EnhancedVideoModal
+        isOpen={enhancedVideoModal.isOpen}
+        onClose={() => setEnhancedVideoModal({ isOpen: false, file: null })}
+        file={{
+          name: enhancedVideoModal.file?.name || '',
+          url: enhancedVideoModal.file?.url,
+          contentType: enhancedVideoModal.file?.contentType || '',
+          videoThumbnail: enhancedVideoModal.file?.videoThumbnail,
+          videoDuration: enhancedVideoModal.file?.videoDuration
+        }}
+        onAnalyze={onReverseEngineeringAction ? (fileName, contentType) => {
+          onReverseEngineeringAction('analyze', {
+            name: fileName,
+            contentType,
+            url: enhancedVideoModal.file?.url || ''
+          })
+        } : undefined}
+        onReverseEngineer={onReverseEngineeringAction ? (fileName, contentType) => {
+          onReverseEngineeringAction('reverse-engineer', {
+            name: fileName,
+            contentType,
+            url: enhancedVideoModal.file?.url || ''
+          })
+        } : undefined}
       />
     </>
   )

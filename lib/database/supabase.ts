@@ -29,7 +29,24 @@ export const supabase: SupabaseClient | null = (() => {
   }
 
   try {
-    return createClient(supabaseUrl, supabaseAnonKey)
+    return createClient(supabaseUrl, supabaseAnonKey, {
+      db: {
+        schema: 'public'
+      },
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true
+      },
+      global: {
+        // Increase fetch timeout to 30 seconds to handle larger queries
+        fetch: (url: RequestInfo | URL, init?: RequestInit) => {
+          return fetch(url, {
+            ...init,
+            signal: init?.signal || AbortSignal.timeout(30000) // 30 second timeout
+          })
+        }
+      }
+    })
   } catch (error) {
     console.error('Failed to create Supabase client:', error)
     return null

@@ -405,7 +405,7 @@ export function AnalyticsDashboard({ images, videos = [], chats = [] }: Analytic
               <Clock className="h-5 w-5" />
               Usage by Time of Day
             </CardTitle>
-            <CardDescription>When you're most active</CardDescription>
+            <CardDescription>{`When you're most active`}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">

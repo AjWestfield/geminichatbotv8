@@ -86,6 +86,12 @@ export function MultiImageEditModal({
         const data = await response.json()
 
         if (!response.ok) {
+          console.error('[MultiImageEditModal] Suggestions API error:', {
+            status: response.status,
+            statusText: response.statusText,
+            error: data.error,
+            fullResponse: data
+          })
           throw new Error(data.error || 'Failed to generate suggestions')
         }
 
@@ -99,7 +105,21 @@ export function MultiImageEditModal({
 
       } catch (error) {
         console.error('[MultiImageEditModal] Error fetching suggestions:', error)
-        setSuggestionsError(error instanceof Error ? error.message : 'Failed to generate suggestions')
+        
+        // Determine user-friendly error message
+        let userMessage = 'Unable to generate suggestions at this time'
+        if (error instanceof Error) {
+          if (error.message.includes('API key')) {
+            userMessage = 'AI suggestions unavailable (API key not configured)'
+          } else if (error.message.includes('rate limit')) {
+            userMessage = 'Too many requests - please try again later'
+          } else if (error.message.includes('safety')) {
+            userMessage = 'Content blocked by safety filters'
+          }
+        }
+        
+        setSuggestionsError(userMessage)
+        // Don't throw the error - let the modal continue to work without suggestions
       } finally {
         setIsLoadingSuggestions(false)
       }

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Chat Loading</title>
+</head>
+<body>
+    <h1>Test Chat Loading</h1>
+    <button onclick="loadChat()">Load Problematic Chat</button>
+    <div id="status"></div>
+    <pre id="result"></pre>
+    
+    <script>
+        const chatId = '872f2da8-21e9-48f8-bd8d-af70ca7ee180';
+        
+        async function loadChat() {
+            const status = document.getElementById('status');
+            const result = document.getElementById('result');
+            
+            status.textContent = 'Loading chat...';
+            const startTime = Date.now();
+            
+            try {
+                const response = await fetch(`/api/chats/${chatId}`);
+                const loadTime = Date.now() - startTime;
+                
+                status.textContent = `Status: ${response.status} (${loadTime}ms)`;
+                
+                const data = await response.json();
+                result.textContent = JSON.stringify(data, null, 2);
+                
+                if (data.chat && !data.error) {
+                    status.textContent += ' - SUCCESS! Chat loaded.';
+                    console.log('Chat loaded successfully:', data);
+                } else if (data.error) {
+                    status.textContent += ' - Error: ' + data.message;
+                }
+            } catch (error) {
+                status.textContent = 'Error: ' + error.message;
+                result.textContent = error.stack;
+            }
+        }
+        
+        // Auto-load on page load
+        window.addEventListener('load', () => {
+            setTimeout(loadChat, 1000);
+        });
+    </script>
+</body>
+</html>

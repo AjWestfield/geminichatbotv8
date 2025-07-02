@@ -1,0 +1,38 @@
+[
+  {
+    "model": "flux-1-dev",
+    "success": false,
+    "error": "No images generated",
+    "duration": 623
+  },
+  {
+    "model": "flux-1-schnell",
+    "success": false,
+    "error": "No images generated",
+    "duration": 7
+  },
+  {
+    "model": "flux-dev-ultra-fast",
+    "success": true,
+    "images": 1,
+    "duration": 3842
+  },
+  {
+    "model": "WaveSpeed-Image-Pro",
+    "success": false,
+    "error": "No images generated",
+    "duration": 5
+  },
+  {
+    "model": "WaveSpeed-Image-Ultra",
+    "success": false,
+    "error": "No images generated",
+    "duration": 7
+  },
+  {
+    "model": "GPT-Image-1",
+    "success": false,
+    "error": "No images generated",
+    "duration": 13
+  }
+]

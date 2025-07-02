@@ -294,6 +294,7 @@ export class ToolOrchestrator {
     return areaMatch ? areaMatch[1] : undefined;
   }
 
+
   /**
    * Build user-friendly explanation
    */

@@ -1,6 +1,7 @@
 'use client'
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { GEMINI_LIMITS } from '@/lib/gemini-limits'
 
 interface ImageGenerationSettings {
   model: string
@@ -23,6 +24,15 @@ interface ChatSettings {
   model: string
 }
 
+interface YouTubeDownloadSettings {
+  enabled: boolean
+  autoDetectUrls: boolean
+  autoDownload: boolean // New setting for auto-downloading on paste
+  defaultQuality: 'auto' | '1080p' | '720p' | '480p' | 'audio'
+  maxFileSize: number // in MB
+  showQualitySelector: boolean
+}
+
 interface SettingsContextType {
   // Loading state
   isLoading: boolean
@@ -38,6 +48,10 @@ interface SettingsContextType {
   // Chat settings
   chatSettings: ChatSettings
   updateChatSettings: (settings: Partial<ChatSettings>) => void
+
+  // YouTube download settings
+  youtubeSettings: YouTubeDownloadSettings
+  updateYouTubeSettings: (settings: Partial<YouTubeDownloadSettings>) => void
 
   // Settings change events
   onSettingsChange: (callback: () => void) => () => void
@@ -64,6 +78,15 @@ const defaultChatSettings: ChatSettings = {
   model: 'gemini-2.5-pro-preview-06-05'
 }
 
+const defaultYouTubeSettings: YouTubeDownloadSettings = {
+  enabled: true,
+  autoDetectUrls: true,
+  autoDownload: true, // Enable auto-download by default
+  defaultQuality: 'auto',
+  maxFileSize: GEMINI_LIMITS.MAX_FILE_SIZE_MB, // 2GB (2048MB) - Gemini API limit
+  showQualitySelector: true
+}
+
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined)
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
@@ -80,6 +103,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
       if (saved) {
         try {
+          // Validate JSON structure before parsing
+          if (!saved.trim().startsWith('{') || !saved.trim().endsWith('}')) {
+            console.warn('[SettingsContext] Invalid JSON structure in imageGenerationSettings, clearing...')
+            localStorage.removeItem('imageGenerationSettings')
+            return defaultImageSettings
+          }
+          
           const parsed = JSON.parse(saved)
           // Validate parsed settings
           if (parsed.model && parsed.style && parsed.size && parsed.quality) {
@@ -93,7 +123,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
             }
           }
         } catch (e) {
-          console.error('[SettingsContext] Failed to parse image settings:', e)
+          console.error('[SettingsContext] Failed to parse image settings, clearing corrupted data:', e)
+          localStorage.removeItem('imageGenerationSettings')
         }
       }
 
@@ -126,6 +157,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       const saved = localStorage.getItem('videoGenerationSettings')
       if (saved) {
         try {
+          // Validate JSON structure before parsing
+          if (!saved.trim().startsWith('{') || !saved.trim().endsWith('}')) {
+            console.warn('[SettingsContext] Invalid JSON structure in videoGenerationSettings, clearing...')
+            localStorage.removeItem('videoGenerationSettings')
+            return defaultVideoSettings
+          }
+          
           const parsed = JSON.parse(saved)
           // Ensure all required fields are present with defaults
           return {
@@ -137,7 +175,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
             autoDetectAspectRatio: parsed.autoDetectAspectRatio !== undefined ? parsed.autoDetectAspectRatio : defaultVideoSettings.autoDetectAspectRatio
           }
         } catch (e) {
-          console.error('Failed to parse video settings:', e)
+          console.error('[SettingsContext] Failed to parse video settings, clearing corrupted data:', e)
+          localStorage.removeItem('videoGenerationSettings')
         }
       }
       // Fallback to individual items for backward compatibility
@@ -159,9 +198,17 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       const saved = localStorage.getItem('chatSettings')
       if (saved) {
         try {
+          // Validate JSON structure before parsing
+          if (!saved.trim().startsWith('{') || !saved.trim().endsWith('}')) {
+            console.warn('[SettingsContext] Invalid JSON structure in chatSettings, clearing...')
+            localStorage.removeItem('chatSettings')
+            return defaultChatSettings
+          }
+          
           return JSON.parse(saved)
         } catch (e) {
-          console.error('Failed to parse chat settings:', e)
+          console.error('[SettingsContext] Failed to parse chat settings, clearing corrupted data:', e)
+          localStorage.removeItem('chatSettings')
         }
       }
       // Fallback
@@ -170,6 +217,36 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       }
     }
     return defaultChatSettings
+  })
+
+  // YouTube settings
+  const [youtubeSettings, setYouTubeSettings] = useState<YouTubeDownloadSettings>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('youtubeDownloadSettings')
+      if (saved) {
+        try {
+          // Validate JSON structure before parsing
+          if (!saved.trim().startsWith('{') || !saved.trim().endsWith('}')) {
+            console.warn('[SettingsContext] Invalid JSON structure in youtubeDownloadSettings, clearing...')
+            localStorage.removeItem('youtubeDownloadSettings')
+            return defaultYouTubeSettings
+          }
+          
+          const parsed = JSON.parse(saved)
+          // Validate parsed settings
+          if (typeof parsed.enabled === 'boolean' && typeof parsed.autoDetectUrls === 'boolean') {
+            return { ...defaultYouTubeSettings, ...parsed }
+          } else {
+            console.warn('[SettingsContext] Invalid YouTube settings structure, using defaults')
+            return defaultYouTubeSettings
+          }
+        } catch (e) {
+          console.error('[SettingsContext] Failed to parse YouTube settings, clearing corrupted data:', e)
+          localStorage.removeItem('youtubeDownloadSettings')
+        }
+      }
+    }
+    return defaultYouTubeSettings
   })
 
   // Settings change callbacks
@@ -273,14 +350,31 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     notifySettingsChange()
   }, [notifySettingsChange])
 
+  const updateYouTubeSettings = useCallback((updates: Partial<YouTubeDownloadSettings>) => {
+    console.log('[SettingsContext] updateYouTubeSettings called with:', updates)
+    
+    setYouTubeSettings(prev => {
+      const newSettings = { ...prev, ...updates }
+      console.log('[SettingsContext] New YouTube settings will be:', newSettings)
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('youtubeDownloadSettings', JSON.stringify(newSettings))
+        console.log('[SettingsContext] Saved YouTube settings to localStorage')
+      }
+      return newSettings
+    })
+    notifySettingsChange()
+  }, [notifySettingsChange])
+
   // Debug logging
   useEffect(() => {
     console.log('[Settings Context] Current settings:', {
       image: imageSettings,
       video: videoSettings,
-      chat: chatSettings
+      chat: chatSettings,
+      youtube: youtubeSettings
     })
-  }, [imageSettings, videoSettings, chatSettings])
+  }, [imageSettings, videoSettings, chatSettings, youtubeSettings])
 
   // Set loading to false after initial mount
   useEffect(() => {
@@ -297,6 +391,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       updateVideoSettings,
       chatSettings,
       updateChatSettings,
+      youtubeSettings,
+      updateYouTubeSettings,
       onSettingsChange
     }}>
       {children}
@@ -328,4 +424,10 @@ export function useVideoSettings() {
 export function useChatSettings() {
   const { chatSettings, updateChatSettings } = useSettings()
   return { settings: chatSettings, updateSettings: updateChatSettings }
+}
+
+// Hook for components that only need YouTube download settings
+export function useYouTubeSettings() {
+  const { youtubeSettings, updateYouTubeSettings } = useSettings()
+  return { settings: youtubeSettings, updateSettings: updateYouTubeSettings }
 }

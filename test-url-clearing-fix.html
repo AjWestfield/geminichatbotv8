@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test URL Clearing Fix</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+        .test-section {
+            background: #2a2a2a;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        .test-case {
+            margin: 15px 0;
+            padding: 15px;
+            background: #333;
+            border-radius: 4px;
+        }
+        .url-input {
+            width: 100%;
+            padding: 10px;
+            background: #444;
+            color: white;
+            border: 1px solid #666;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success {
+            color: #4ade80;
+        }
+        .error {
+            color: #f87171;
+        }
+        .info {
+            color: #60a5fa;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        .log {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>YouTube URL Clearing & Instagram Thumbnail Test</h1>
+    
+    <div class="test-section">
+        <h2>1. YouTube URL Clearing Test</h2>
+        
+        <div class="test-case">
+            <h3>Test URL Formats</h3>
+            <p>Click to copy different YouTube URL formats:</p>
+            <button onclick="copyToClipboard('https://www.youtube.com/watch?v=dQw4w9WgXcQ')">
+                Copy Full URL
+            </button>
+            <button onclick="copyToClipboard('https://youtu.be/dQw4w9WgXcQ')">
+                Copy Short URL
+            </button>
+            <button onclick="copyToClipboard('https://m.youtube.com/watch?v=dQw4w9WgXcQ')">
+                Copy Mobile URL
+            </button>
+            <button onclick="copyToClipboard('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s')">
+                Copy URL with Timestamp
+            </button>
+            <div id="copy-status" class="info" style="margin-top: 10px;"></div>
+        </div>
+        
+        <div class="test-case">
+            <h3>Simulate URL Detection & Clearing</h3>
+            <input type="text" class="url-input" id="test-input" placeholder="Paste YouTube URL here">
+            <button onclick="simulateAutoDownload()">Simulate Auto-Download</button>
+            <div id="test-log" class="log"></div>
+        </div>
+    </div>
+    
+    <div class="test-section">
+        <h2>2. Instagram Thumbnail Test URLs</h2>
+        
+        <div class="test-case">
+            <h3>Sample Instagram URLs</h3>
+            <p>Use these for testing (replace with real URLs):</p>
+            <button onclick="copyToClipboard('https://www.instagram.com/reel/C1234567890/')">
+                Copy Reel URL
+            </button>
+            <button onclick="copyToClipboard('https://www.instagram.com/p/C1234567890/')">
+                Copy Post URL
+            </button>
+            <div class="info" style="margin-top: 10px;">
+                Note: Replace with actual Instagram URLs for testing
+            </div>
+        </div>
+    </div>
+    
+    <div class="test-section">
+        <h2>3. Expected Behavior</h2>
+        <ul>
+            <li class="success">✅ YouTube URLs should disappear from input after download</li>
+            <li class="success">✅ Both original and normalized URLs should be cleared</li>
+            <li class="success">✅ Instagram videos should show thumbnails after download</li>
+            <li class="success">✅ Thumbnails should display with video icon overlay</li>
+        </ul>
+    </div>
+
+    <script>
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                const status = document.getElementById('copy-status');
+                status.textContent = `Copied: ${text}`;
+                status.className = 'success';
+                setTimeout(() => {
+                    status.textContent = '';
+                }, 3000);
+            });
+        }
+        
+        function addLog(message, type = 'info') {
+            const log = document.getElementById('test-log');
+            const time = new Date().toLocaleTimeString();
+            const color = type === 'success' ? '#4ade80' : 
+                         type === 'error' ? '#f87171' : '#60a5fa';
+            log.innerHTML += `<div style="color: ${color}">[${time}] ${message}</div>`;
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        function simulateAutoDownload() {
+            const input = document.getElementById('test-input');
+            const originalValue = input.value;
+            
+            addLog(`Original input: "${originalValue}"`);
+            
+            // Simulate URL detection
+            const youtubePatterns = [
+                /(?:https?:\/\/)?(?:www\.)?youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/,
+                /(?:https?:\/\/)?(?:www\.)?youtu\.be\/([a-zA-Z0-9_-]+)/,
+                /(?:https?:\/\/)?m\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/
+            ];
+            
+            let detectedUrl = null;
+            let videoId = null;
+            
+            for (const pattern of youtubePatterns) {
+                const match = originalValue.match(pattern);
+                if (match) {
+                    detectedUrl = match[0];
+                    videoId = match[1];
+                    break;
+                }
+            }
+            
+            if (detectedUrl) {
+                addLog(`Detected YouTube URL: "${detectedUrl}"`, 'success');
+                addLog(`Video ID: ${videoId}`);
+                
+                // Simulate normalized URL
+                const normalizedUrl = `https://www.youtube.com/watch?v=${videoId}`;
+                addLog(`Normalized URL: "${normalizedUrl}"`);
+                
+                // Simulate download start with setTimeout (like the fix)
+                setTimeout(() => {
+                    addLog('Starting download...', 'info');
+                    
+                    // Simulate URL clearing (using original URL)
+                    const newValue = originalValue.replace(detectedUrl, '').trim();
+                    input.value = newValue;
+                    
+                    addLog(`Cleared URL. New value: "${newValue}"`, 'success');
+                    
+                    if (newValue === '') {
+                        addLog('✅ Input successfully cleared!', 'success');
+                    } else {
+                        addLog('⚠️ Input not fully cleared', 'error');
+                    }
+                }, 100);
+            } else {
+                addLog('No YouTube URL detected', 'error');
+            }
+        }
+        
+        // Add paste event listener
+        document.getElementById('test-input').addEventListener('paste', (e) => {
+            setTimeout(() => {
+                addLog(`Pasted: "${e.target.value}"`);
+            }, 0);
+        });
+    </script>
+</body>
+</html>

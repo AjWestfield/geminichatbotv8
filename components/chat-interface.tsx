@@ -21,8 +21,19 @@ import { Settings } from "lucide-react"
 import { useChatWithTools } from "@/hooks/use-chat-with-tools"
 import { toast } from "sonner"
 import { SecureApiKeyInput } from "./secure-api-key-input"
-import { MCPAgentWorkflow } from "@/lib/mcp/mcp-agent-workflow"
+// import { MCPAgentWorkflow } from "@/lib/mcp/mcp-agent-workflow" // disabled
+
+// Lightweight stub to satisfy references when MCP feature is disabled
+class MCPAgentWorkflowStub {
+  static instance = new MCPAgentWorkflowStub()
+  static getInstance() {
+    return MCPAgentWorkflowStub.instance
+  }
+  stopMonitoring() {}
+}
+const MCPAgentWorkflow = MCPAgentWorkflowStub;
 import { GeneratedVideo } from "@/lib/video-generation-types"
+import { GeneratedAudio } from "@/components/audio-gallery"
 import { useVideoProgressStore } from "@/lib/stores/video-progress-store"
 import { useImageProgressStore } from "@/lib/stores/image-progress-store"
 import { InlineImageOptions } from "./inline-image-options"
@@ -34,12 +45,53 @@ import { getImageAspectRatio } from "@/lib/image-utils"
 import { parseGeminiTranscription, hasTranscription, removeTranscriptionFromResponse } from "@/lib/gemini-transcription-parser"
 import { useImageSettings, useVideoSettings } from "@/lib/contexts/settings-context"
 import { createAnalysisPrompt } from "@/lib/reverse-engineering-utils"
-import { useDeepResearch } from "@/hooks/use-deep-research"
-import { useResearchIntent } from "@/hooks/use-research-intent"
-import { useDeepResearchStore } from "@/lib/stores/deep-research-store"
+// REMOVED: Deep research auto-detection imports that were causing automatic activation
+// import { useDeepResearch } from "@/hooks/use-deep-research"
+// import { useResearchIntent } from "@/hooks/use-research-intent"
+// import { useDeepResearchStore } from "@/lib/stores/deep-research-store"
+import { useBrowserAgent } from "@/hooks/use-browser-agent"
+import { useMCPAutoConnect } from "@/hooks/use-mcp-auto-connect"
+import { useMCPConnectionHealth } from "@/hooks/use-mcp-connection-health"
+import { BrowserAgentPanel } from "./browser-agent-panel"
 import { DeepResearchPanel } from "./deep-research-panel"
 import { VideoGenerationModal, type VideoGenerationOptions } from "./video-generation-modal"
 import { WebSearchIndicator } from "./web-search-indicator"
+// import AgentTaskDisplay removed
+// import { useAgentTaskStore } from "@/lib/stores/agent-task-store" // disabled
+
+// Stub useAgentTaskStore to disable agent task feature at runtime
+const _stubAgentTaskStore = {
+  setTasks: () => {},
+  updateTaskStatus: () => {},
+  addTask: () => {},
+  clearTasks: () => {},
+  setActiveMessageId: () => {},
+  tasks: [],
+  getState: () => ({ tasks: [] })
+};
+// The hook returns the store, and the function itself carries getState to mimic Zustand store API
+function useAgentTaskStore() {
+  return _stubAgentTaskStore;
+}
+(useAgentTaskStore as any).getState = _stubAgentTaskStore.getState;
+// import { parseAgentTaskUpdate, findTaskByTitle, normalizeTaskStatus } from "@/lib/agent-task-parser" // disabled
+// import { processMessageForMCPSync, logMCPSync } from "@/lib/mcp-ui-bridge" // disabled
+const processMessageForMCPSync = (..._args: any[]) => false;
+const logMCPSync = (..._args: any[]) => {};
+// import {
+//   detectTodoManagerFromContent,
+//   extractTodoDataFromExecutionResult,
+//   processMCPToolResultForTaskSync
+// } from "@/lib/mcp-task-sync-bridge" // removed
+
+// Stubbed MCP task sync bridge helpers
+const detectTodoManagerFromContent = (..._args: any[]) => ({ hasTodoOperations: false });
+const extractTodoDataFromExecutionResult = (..._args: any[]) => [];
+const processMCPToolResultForTaskSync = (..._args: any[]) => false;
+import { useBrowserAutomation } from "@/hooks/use-browser-automation"
+import { shouldTriggerBrowserTask, generateSearchUrl } from "@/lib/client-utils/browser-task-detection"
+import { containsTTSCommand, containsMultiSpeakerTTSCommand, extractTTSContent } from "@/lib/wavespeed-tts-handler"
+// REMOVED: extractResearchQuery, isResearchRequest - these were causing automatic deep research activation
 
 interface FileUpload {
   file: File
@@ -92,6 +144,8 @@ interface ChatInterfaceProps {
   onResetChat?: () => void
   onImageEditingModelChange?: (model: string) => void
   initialImageEditingModel?: string
+  activeCanvasTab?: string
+  onCanvasTabChange?: (tab: string) => void
 }
 
 export default function ChatInterface({
@@ -114,7 +168,9 @@ export default function ChatInterface({
   chatId,
   onResetChat,
   onImageEditingModelChange,
-  initialImageEditingModel
+  initialImageEditingModel,
+  activeCanvasTab,
+  onCanvasTabChange
 }: ChatInterfaceProps) {
   const [selectedModel, setSelectedModel] = useState(initialSelectedModel || "gemini-2.0-flash")
   const [selectedFile, setSelectedFile] = useState<FileUpload | null>(null)
@@ -145,7 +201,7 @@ export default function ChatInterface({
 
   // Image generation settings from context
   const { settings: currentImageSettings, updateSettings: updateImageSettings } = useImageSettings()
-  
+
   // Image progress store
   const { addImageGeneration, updateProgress, completeImageGeneration, failImageGeneration, updateStage, calculateProgress, getAllGeneratingImages } = useImageProgressStore()
 
@@ -252,6 +308,17 @@ export default function ChatInterface({
 
   // Store object URLs for cleanup
   const objectURLsRef = useRef<Set<string>>(new Set())
+
+  // Browser automation hook
+  const {
+    session: browserSession,
+    startSession: startBrowserSession,
+    navigateTo: navigateToBrowser,
+    isLoading: isBrowserLoading
+  } = useBrowserAutomation({
+    chatId: chatId || undefined,
+    autoStart: false
+  })
 
   // Store progress intervals for cleanup
   const imageProgressIntervalsRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
@@ -414,6 +481,41 @@ export default function ChatInterface({
     return hash.toString()
   }
 
+  // Detect if a message is a reverse engineering request
+  const isReverseEngineeringRequest = useCallback((content: string): boolean => {
+    if (!content) return false
+
+    const reverseEngineeringPatterns = [
+      // Direct reverse engineering requests
+      /reverse\s*engineer/i,
+      /🔄.*reverse.*engineer/i,
+
+      // Video reverse engineering prompts from handleInlineVideoOptionSelect
+      /complete\s+audio\s+transcription\s+with\s+timestamps/i,
+      /production\s+breakdown.*tools.*equipment.*techniques/i,
+      /content\s+structure\s+(?:&|and)\s+script\s+analysis/i,
+      /technical\s+recreation\s+guide/i,
+      /design\s+decisions.*creative\s+choices/i,
+      /creation\s+workflow.*step-by-step\s+process/i,
+
+      // Image reverse engineering prompts
+      /AI\s+model\s+detection.*identify.*likely.*AI\s+model/i,
+      /prompt\s+engineering\s+reverse\s+analysis/i,
+      /recreatable\s+prompt\s+generation/i,
+      /\[PROMPT\s+START\]/i,
+      /\[PROMPT\s+END\]/i,
+
+      // General reverse engineering patterns
+      /analyze.*creation.*process/i,
+      /breakdown.*production.*technique/i,
+      /how.*was.*this.*(?:made|created|generated)/i,
+      /recreate.*(?:this|similar).*content/i,
+      /deconstruct.*(?:this|the).*(?:video|image|content)/i
+    ]
+
+    return reverseEngineeringPatterns.some(pattern => pattern.test(content))
+  }, [])
+
   // Script detection function
   const detectScript = useCallback((content: string, previousUserMessage?: any): { isScript: boolean; length: number; estimatedDuration: string } => {
     if (!content || content.length < 100) {
@@ -432,7 +534,25 @@ export default function ChatInterface({
       /technical\s+recreation\s+guide/i,
       /content\s+structure\s+(?:&|and)\s+script\s+analysis/i, // Specific pattern from our prompt
       /timestamped\s+transcription/i,
-      /visual\s+analysis\s+with\s+timeline/i
+      /visual\s+analysis\s+with\s+timeline/i,
+      // Additional reverse engineering exclusions
+      /reverse\s+engineering\s+analysis/i,
+      /\[PROMPT\s+START\]/i, // Reverse engineering prompt markers
+      /\[PROMPT\s+END\]/i,
+      /recreatable\s+prompt/i,
+      /prompt\s+engineering\s+reverse\s+analysis/i,
+      /AI\s+model\s+detection/i,
+      /likely\s+AI\s+(?:model|tool)/i,
+      /generation\s+technique/i,
+      /prompt\s+structure/i,
+      /style\s+modifiers/i,
+      /negative\s+prompts/i,
+      /CFG\s+scale/i,
+      /guidance\s+scale/i,
+      /model-specific\s+parameters/i,
+      /aspect\s+ratio.*\d+:\d+/i,
+      /quality\/steps\s+settings/i,
+      /seed\s+\(if\s+detectable/i
     ]
 
     // If this appears to be a video analysis request, exclude from script detection
@@ -449,7 +569,10 @@ export default function ChatInterface({
       previousUserMessage.content.toLowerCase().includes('narration') ||
       previousUserMessage.content.toLowerCase().includes('write a commercial') ||
       previousUserMessage.content.toLowerCase().includes('write an ad')
-    ) && !videoAnalysisIndicators.some(pattern => pattern.test(previousUserMessage.content))
+    ) && !videoAnalysisIndicators.some(pattern => pattern.test(previousUserMessage.content)) &&
+    !previousUserMessage.content.toLowerCase().includes('reverse engineer') &&
+    !previousUserMessage.content.toLowerCase().includes('analyze') &&
+    !previousUserMessage.content.toLowerCase().includes('transcription')
 
     // Strong script indicators (must have at least one)
     const strongScriptIndicators = [
@@ -537,6 +660,18 @@ export default function ChatInterface({
       /based\s+on/i.test(content) && /market/i.test(content), // Analysis language
       content.includes('**') && content.includes('•'), // Mixed formatting
       /the\s+(market|industry|sector)/i.test(content), // Business analysis terms
+      // Reverse engineering content markers
+      content.includes('[PROMPT START]') || content.includes('[PROMPT END]'),
+      /\*\*reverse\s+engineering\s+analysis/i.test(content),
+      /\*\*ai\s+model\s+detection\*\*/i.test(content),
+      /\*\*technical\s+analysis\*\*/i.test(content),
+      /\*\*prompt\s+engineering/i.test(content),
+      /\*\*recreatable\s+prompt/i.test(content),
+      /\*\*parameters\s+and\s+settings\*\*/i.test(content),
+      /midjourney|dall-e|stable\s+diffusion|flux|ideogram/i.test(content),
+      /model\s+parameters:|aspect\s+ratio:|quality\/steps:/i.test(content),
+      content.includes('telltale signs') || content.includes('artifact patterns'),
+      /generation\s+technique.*text-to-video|image-to-video/i.test(content)
     ].some(Boolean)
 
     // Exclude if it's clearly news, informational content, or AI-generated analysis
@@ -602,15 +737,14 @@ export default function ChatInterface({
     }
   }, [imageQuality, currentImageSettings.style, currentImageSettings.size])
 
-  // Initialize MCP on mount and start workflow monitor
-  useEffect(() => {
-    // Initialize MCP servers
-    fetch('/api/mcp/init')
-      .then(res => res.json())
-      .then(data => console.log('MCP initialized:', data))
-      .catch(err => console.error('Failed to initialize MCP:', err))
+  // MCP integration - Initialize and auto-connect enabled servers
+  useMCPAutoConnect()
 
-    // Initialize the MCP Agent Workflow monitor (starts automatically)
+  // Monitor MCP connection health
+  useMCPConnectionHealth()
+
+  // Initialize the MCP Agent Workflow monitor
+  useEffect(() => {
     MCPAgentWorkflow.getInstance()
     console.log('MCP Agent Workflow monitor initialized')
 
@@ -721,14 +855,22 @@ export default function ChatInterface({
 
   // Add save lock to prevent duplicate image saves
   const processedImageGenerationRef = useRef<Set<string>>(new Set())
-  
+
+  // Add save lock to prevent duplicate TTS saves
+  const processedTTSGenerationRef = useRef<Set<string>>(new Set())
+
+  // Toast notification debounce tracking
+  const lastToastTimeRef = useRef<number>(0)
+  const lastToastMessageRef = useRef<string>('') // Track last toast message to prevent exact duplicates
+  const TOAST_DEBOUNCE_MS = 3000 // Prevent toasts within 3 seconds of each other
+
   // Track initial message count to avoid processing old messages when loading a chat
   const initialMessageCountRef = useRef<number>(0)
 
   // Deep Research mode state (moved above useChatWithTools to avoid declaration order issues)
   const [isDeepResearchMode, setIsDeepResearchMode] = useState(false)
 
-  const { messages, input, handleInputChange, handleSubmit: originalHandleSubmit, isLoading, error, stop, mcpToolExecuting, append } = useChatWithTools({
+  const { messages, input, handleInputChange, handleSubmit: originalHandleSubmit, isLoading, error, stop, ttsGenerationState, append } = useChatWithTools({
     api: "/api/chat",
     body: {
       model: selectedModel,
@@ -754,7 +896,8 @@ export default function ChatInterface({
             uri: selectedFile.geminiFile.uri,
             mimeType: selectedFile.geminiFile.mimeType,
             name: selectedFile.file.name,
-            transcription: selectedFile.transcription
+            transcription: selectedFile.transcription,
+            skipValidation: (selectedFile.file as any).skipValidation
           })
         }
         if (selectedFiles.length > 0) {
@@ -762,7 +905,8 @@ export default function ChatInterface({
             uri: file.geminiFile!.uri,
             mimeType: file.geminiFile!.mimeType,
             name: file.file.name,
-            transcription: file.transcription
+            transcription: file.transcription,
+            skipValidation: (file.file as any).skipValidation
           })))
         }
         return allFiles.length > 0 ? allFiles : undefined
@@ -774,11 +918,38 @@ export default function ChatInterface({
     },
   })
 
-  // Deep Research hooks
-  const deepResearch = useDeepResearch()
-  const { detectIntent, shouldAutoTrigger } = useResearchIntent()
-  const { createSession, getActiveSession } = useDeepResearchStore()
+  // REMOVED: Deep Research auto-detection hooks that were causing automatic activation
+  // const deepResearch = useDeepResearch()
+  // const { detectIntent, shouldAutoTrigger } = useResearchIntent()
+  // const { createSession, getActiveSession } = useDeepResearchStore()
   const [showDeepResearchPanel, setShowDeepResearchPanel] = useState(false)
+
+  // Browser Agent integration
+  const browserAgent = useBrowserAgent({
+    onSessionStart: (session) => {
+      console.log('[Browser Agent] Session started:', session.id)
+    },
+    onSessionEnd: () => {
+      console.log('[Browser Agent] Session ended')
+    },
+    onAction: (action) => {
+      console.log('[Browser Agent] Action:', action)
+    },
+    onCanvasTabChange,
+    onResponse: (response) => {
+      console.log('[Browser Agent] Response received:', response)
+
+      // Append the browser agent response to the chat
+      append({
+        role: 'assistant',
+        content: response,
+        metadata: {
+          source: 'browser-agent',
+          model: 'claude-sonnet-4-20250514'
+        }
+      })
+    }
+  })
 
   // Track processed messages to prevent infinite loops
   const processedDeepResearchMessagesRef = useRef<Set<string>>(new Set())
@@ -875,7 +1046,7 @@ export default function ChatInterface({
           try {
             const progressData = JSON.parse(imageStartedMatch[1])
             console.log('[ChatInterface] Image generation started:', progressData)
-            
+
             // Start progress tracking
             if (progressData.placeholderId) {
               addImageGeneration(
@@ -888,12 +1059,12 @@ export default function ChatInterface({
                   model: progressData.model
                 }
               )
-              
+
               // Start periodic progress updates
               const startTime = Date.now()
               const progressInterval = setInterval(() => {
                 const elapsed = (Date.now() - startTime) / 1000 // in seconds
-                
+
                 // Update stage based on elapsed time
                 if (elapsed < 2) {
                   updateStage(progressData.placeholderId, 'initializing')
@@ -902,10 +1073,10 @@ export default function ChatInterface({
                 } else {
                   updateStage(progressData.placeholderId, 'finalizing')
                 }
-                
+
                 calculateProgress(progressData.placeholderId)
               }, 100) // Update every 100ms for smooth animation
-              
+
               // Store interval to clean up later
               imageProgressIntervalsRef.current.set(progressData.placeholderId, progressInterval)
             }
@@ -916,6 +1087,45 @@ export default function ChatInterface({
       }
     }
   }, [messages, isLoading, addImageGeneration, calculateProgress, updateStage])
+
+  // Monitor messages for agent task updates
+  const { setTasks, updateTaskStatus, addTask, clearTasks, setActiveMessageId } = useAgentTaskStore()
+  const processedTaskMessagesRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (messages && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1]
+
+      // Only process assistant messages that haven't been processed yet
+      if (lastMessage?.role === 'assistant' && lastMessage.content && lastMessage.id) {
+        if (processedTaskMessagesRef.current.has(lastMessage.id)) {
+          return
+        }
+
+        // Mark as processed
+        processedTaskMessagesRef.current.add(lastMessage.id)
+
+        // Handle async operations
+        const processMessage = async () => {
+          // Use enhanced MCP-UI bridge for processing
+          const hasUpdates = processMessageForMCPSync(lastMessage.content, lastMessage.id)
+
+
+        }
+
+        // Call the async function
+        processMessage()
+      }
+    }
+  }, [messages, setTasks, updateTaskStatus, addTask, setActiveMessageId])
+
+  // Clear tasks when starting a new chat
+  useEffect(() => {
+    if (!chatId || chatId === null) {
+      clearTasks()
+      processedTaskMessagesRef.current.clear()
+    }
+  }, [chatId, clearTasks])
 
   // Handle chat changes - reset messages when switching chats or starting new chat
   useEffect(() => {
@@ -1291,22 +1501,33 @@ export default function ChatInterface({
 
     const lastMessage = messages[messages.length - 1]
 
+    console.log('[Image Generation Parser] Effect triggered. Last message:', {
+      id: lastMessage?.id,
+      role: lastMessage?.role,
+      contentLength: lastMessage?.content?.length || 0,
+      contentPreview: lastMessage?.content?.substring(0, 100) || ''
+    })
+
     // Only check assistant messages
     if (lastMessage?.role === 'assistant' && lastMessage.content) {
       // Check if this message contains image generation data
       const imageGenerationMatch = lastMessage.content.match(/\[IMAGE_GENERATION_COMPLETED\]([\s\S]*?)\[\/IMAGE_GENERATION_COMPLETED\]/)
 
       if (imageGenerationMatch) {
-        // Create a unique key for this image generation to prevent duplicates
-        const imageGenerationKey = `${lastMessage.id}-${imageGenerationMatch[0].substring(0, 100)}`
+        // Create a more robust unique key using message ID and a hash of the generation data
+        const generationDataHash = JSON.stringify(imageGenerationMatch[1]).split('').reduce((a, b) => {
+          a = ((a << 5) - a) + b.charCodeAt(0)
+          return a & a
+        }, 0)
+        const imageGenerationKey = `${lastMessage.id}-gen-${generationDataHash}`
 
         // Check if we've already processed this specific image generation
         if (processedImageGenerationRef.current.has(imageGenerationKey)) {
-          console.log('[Image Generation Parser] Already processed this image generation, skipping')
+          console.log('[Image Generation Parser] Already processed this image generation, skipping. Key:', imageGenerationKey, 'Total processed:', processedImageGenerationRef.current.size)
           return
         }
 
-        console.log('[Image Generation Parser] Detected image generation data in assistant message')
+        console.log('[Image Generation Parser] Detected image generation data in assistant message. Key:', imageGenerationKey)
 
         try {
           const imageData = JSON.parse(imageGenerationMatch[1])
@@ -1323,8 +1544,8 @@ export default function ChatInterface({
 
             // Find the progress entry for this generation
             const allGeneratingImages = getAllGeneratingImages()
-            const progressEntry = allGeneratingImages.find(prog => 
-              prog.prompt === cleanedPrompt || 
+            const progressEntry = allGeneratingImages.find(prog =>
+              prog.prompt === cleanedPrompt ||
               prog.prompt === originalPrompt ||
               prog.prompt === extractImagePrompt(originalPrompt)
             )
@@ -1338,7 +1559,7 @@ export default function ChatInterface({
 
             // Process each generated image
             const newImages: GeneratedImage[] = []
-            
+
             for (const imgData of imageData.images) {
               const generatedImage: GeneratedImage = {
                 id: progressEntry?.imageId || generateImageId(),
@@ -1368,6 +1589,41 @@ export default function ChatInterface({
 
             // Switch to Images tab to show the new images
             onImageGenerationStart?.()
+
+            // Show success toast only once for all images with debounce
+            if (newImages.length > 0) {
+              const now = Date.now()
+              const imageText = newImages.length === 1 ? 'Image' : 'Images'
+              const toastMessage = `${imageText} generated successfully`
+              const timeSinceLastToast = now - lastToastTimeRef.current
+
+              // Check both time debounce and message deduplication
+              if (timeSinceLastToast > TOAST_DEBOUNCE_MS || lastToastMessageRef.current !== toastMessage) {
+                console.log('[Image Generation Parser] Showing success toast:', {
+                  message: toastMessage,
+                  timeSinceLastToast,
+                  lastMessage: lastToastMessageRef.current,
+                  imageCount: newImages.length,
+                  model: imageData.metadata.model
+                })
+
+                lastToastTimeRef.current = now
+                lastToastMessageRef.current = toastMessage
+
+                toast.success(toastMessage, {
+                  description: `Generated ${newImages.length} ${imageText.toLowerCase()} with ${imageData.metadata.model || 'AI model'}`,
+                  duration: 3000,
+                  id: `image-gen-${imageGenerationKey}` // Add unique ID to prevent duplicate toasts
+                })
+              } else {
+                console.log('[Image Generation Parser] Skipping duplicate success toast:', {
+                  message: toastMessage,
+                  timeSinceLastToast,
+                  debounceMs: TOAST_DEBOUNCE_MS,
+                  reason: timeSinceLastToast <= TOAST_DEBOUNCE_MS ? 'time debounce' : 'duplicate message'
+                })
+              }
+            }
           } else if (imageData.success === false && imageData.error) {
             // Handle image generation failure
             console.error('[Image Generation Parser] Image generation failed:', imageData.error)
@@ -1375,16 +1631,38 @@ export default function ChatInterface({
             // Mark this generation as processed
             processedImageGenerationRef.current.add(imageGenerationKey)
 
-            // Show error toast notification
-            toast.error(`Image generation failed: ${imageData.error}`, {
-              description: `Model: ${imageData.model || 'Unknown'} | Prompt: ${imageData.prompt}`,
-              duration: 5000,
-            })
+            // Show error toast notification with debounce
+            const now = Date.now()
+            const errorMessage = `Image generation failed: ${imageData.error}`
+            const timeSinceLastToast = now - lastToastTimeRef.current
+
+            if (timeSinceLastToast > TOAST_DEBOUNCE_MS || lastToastMessageRef.current !== errorMessage) {
+              console.log('[Image Generation Parser] Showing error toast:', {
+                message: errorMessage,
+                timeSinceLastToast,
+                model: imageData.model
+              })
+
+              lastToastTimeRef.current = now
+              lastToastMessageRef.current = errorMessage
+
+              toast.error(errorMessage, {
+                description: `Model: ${imageData.model || 'Unknown'} | Prompt: ${imageData.prompt}`,
+                duration: 5000,
+                id: `image-gen-error-${imageGenerationKey}` // Add unique ID
+              })
+            } else {
+              console.log('[Image Generation Parser] Skipping duplicate error toast:', {
+                message: errorMessage,
+                timeSinceLastToast,
+                reason: timeSinceLastToast <= TOAST_DEBOUNCE_MS ? 'time debounce' : 'duplicate message'
+              })
+            }
 
             // Find the progress entry for this failed generation
             const originalPrompt = imageData.prompt
             const allGeneratingImages = getAllGeneratingImages()
-            const progressEntry = allGeneratingImages.find(prog => 
+            const progressEntry = allGeneratingImages.find(prog =>
               prog.prompt === originalPrompt ||
               prog.prompt === extractImagePrompt(originalPrompt)
             )
@@ -1449,7 +1727,7 @@ export default function ChatInterface({
 
         // Generate unique ID for progress tracking
         const imageId = generateImageId()
-        
+
         console.log('[Chat Interface] Starting progress tracking for image generation request:', {
           imageId,
           prompt: cleanedPrompt,
@@ -1475,6 +1753,177 @@ export default function ChatInterface({
     }
   }, [messages, currentImageSettings, onImageGenerationStart, addImageGeneration, getAllGeneratingImages])
 
+  // Watch for assistant messages with TTS generation data
+  useEffect(() => {
+    if (!messages || messages.length === 0) return
+
+    const lastMessage = messages[messages.length - 1]
+
+    // Only check assistant messages
+    if (lastMessage?.role === 'assistant' && lastMessage.content) {
+      // Check if this message contains TTS generation data
+      const ttsMatch = lastMessage.content.match(/\[TTS_GENERATION_COMPLETED\]([\s\S]*?)\[\/TTS_GENERATION_COMPLETED\]/)
+
+      if (ttsMatch) {
+        // Create a unique key for this TTS generation to prevent duplicates
+        const ttsGenerationKey = `${lastMessage.id}-${ttsMatch[0].substring(0, 100)}`
+
+        // Check if we've already processed this specific TTS generation
+        if (processedTTSGenerationRef.current.has(ttsGenerationKey)) {
+          console.log('[TTS Parser] Already processed this TTS generation, skipping')
+          return
+        }
+
+        console.log('[TTS Parser] Detected TTS generation data in assistant message')
+
+        try {
+          const ttsData = JSON.parse(ttsMatch[1])
+          console.log('[TTS Parser] Parsed TTS data:', {
+            success: ttsData.success,
+            hasAudio: !!ttsData.audio,
+            mimeType: ttsData.mimeType,
+            isMultiSpeaker: ttsData.metadata?.isMultiSpeaker,
+            provider: ttsData.metadata?.provider
+          })
+
+          if (ttsData.success && ttsData.audio) {
+            // Mark this generation as processed before creating audio
+            processedTTSGenerationRef.current.add(ttsGenerationKey)
+
+            console.log('[TTS Parser] Processing completed TTS audio')
+
+            // Extract metadata
+            const metadata = ttsData.metadata || {}
+            const timestamp = new Date(metadata.timestamp || Date.now())
+
+            // Create the generated audio object
+            const generatedAudio: GeneratedAudio = {
+              id: `audio-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              text: metadata.originalText || ttsData.originalText || '',
+              script: ttsData.script || metadata.originalText || '',
+              audioBase64: ttsData.audio,
+              mimeType: ttsData.mimeType || 'audio/mpeg',
+              timestamp: timestamp.getTime(),
+              voice: metadata.voice,
+              voiceId: metadata.voiceId,
+              voiceName: metadata.voiceName || metadata.voice || 'Eva',
+              isMultiSpeaker: metadata.isMultiSpeaker || false,
+              provider: metadata.provider || 'wavespeed',
+              duration: metadata.duration,
+              isGenerating: false,
+              status: 'completed'
+            }
+
+            console.log('[TTS Parser] Created audio object:', {
+              id: generatedAudio.id,
+              voiceName: generatedAudio.voiceName,
+              isMultiSpeaker: generatedAudio.isMultiSpeaker,
+              hasAudioData: !!generatedAudio.audioBase64
+            })
+
+            // Add the completed audio to the gallery
+            onGeneratedAudioChange?.(generatedAudio)
+
+            // Switch to Audio tab to show the new audio
+            onCanvasTabChange?.('audio')
+
+            console.log('[TTS Parser] TTS audio added to gallery and switched to audio tab')
+          } else if (ttsData.success === false && ttsData.error) {
+            // Handle TTS generation failure
+            console.error('[TTS Parser] TTS generation failed:', ttsData.error)
+
+            // Mark this generation as processed
+            processedTTSGenerationRef.current.add(ttsGenerationKey)
+
+            // Show error toast notification
+            toast.error(`TTS generation failed: ${ttsData.error}`, {
+              description: `Text: ${ttsData.originalText?.substring(0, 50)}...`,
+              duration: 5000,
+            })
+          }
+        } catch (error) {
+          console.error('[TTS Parser] Failed to parse TTS data:', error)
+        }
+      }
+    }
+  }, [messages, onGeneratedAudioChange, onCanvasTabChange])
+
+  // Enhanced TTS detection - triggers immediately when user sends TTS request
+  useEffect(() => {
+    if (!messages || messages.length === 0) return
+
+    // Only process new messages, not ones loaded from chat history
+    if (messages.length <= initialMessageCountRef.current) {
+      console.log('[Chat Interface] Skipping TTS detection - message is from initial load')
+      return
+    }
+
+    const lastMessage = messages[messages.length - 1]
+
+    // ENHANCED: Check if it's a user message and trigger immediate TTS detection
+    if (lastMessage?.role === 'user' && lastMessage.content) {
+      // Skip TTS detection if this is a reverse engineering request
+      if (isReverseEngineeringRequest(lastMessage.content)) {
+        console.log('[Chat Interface] Skipping TTS detection - message is a reverse engineering request')
+        return
+      }
+
+      // Check if this is a TTS request
+      if (containsTTSCommand(lastMessage.content)) {
+        console.log('[Chat Interface] ⚡ IMMEDIATE TTS DETECTION - User message:', lastMessage.content.substring(0, 100) + '...')
+
+        // Create a unique key to prevent duplicate processing
+        const ttsRequestKey = `user-${lastMessage.id}-tts-request-immediate`
+
+        // Check if we've already processed this TTS request
+        if (processedTTSGenerationRef.current.has(ttsRequestKey)) {
+          console.log('[Chat Interface] TTS request already processed for this message')
+          return
+        }
+
+        // Mark as processed IMMEDIATELY
+        processedTTSGenerationRef.current.add(ttsRequestKey)
+
+        // Extract TTS content with enhanced metadata
+        const ttsContent = extractTTSContent(lastMessage.content)
+        console.log('[Chat Interface] ⚡ Extracted TTS content for immediate processing:', {
+          text: ttsContent.text.substring(0, 100) + '...',
+          multiSpeaker: ttsContent.multiSpeaker,
+          voiceName: ttsContent.voiceName,
+          textLength: ttsContent.text.length,
+          estimatedWords: ttsContent.text.split(/\s+/).length
+        })
+
+        // Calculate enhanced duration estimate
+        const wordCount = ttsContent.text.split(/\s+/).length
+        const estimatedSeconds = Math.max(10, Math.ceil(wordCount / 2.5)) // ~2.5 words per second
+        const estimatedMinutes = Math.ceil(estimatedSeconds / 60)
+        const estimatedDuration = estimatedSeconds < 60 ? `${estimatedSeconds}s` : `${estimatedMinutes}m`
+
+        // Determine voice name with better defaults
+        const voiceName = ttsContent.multiSpeaker ? 'Multi-Speaker' : (ttsContent.voiceName || 'Eva')
+
+        // IMMEDIATE: Switch to Audio tab FIRST - before any processing
+        console.log('[Chat Interface] ⚡ IMMEDIATE TAB SWITCH to Audio')
+        onCanvasTabChange?.('audio')
+
+        // IMMEDIATE: Create placeholder audio and start tracking
+        if (onAudioGenerationStart) {
+          const audioId = onAudioGenerationStart(ttsContent.text, voiceName, estimatedDuration)
+          console.log('[Chat Interface] ⚡ IMMEDIATE audio generation tracking started:', {
+            audioId,
+            voiceName,
+            estimatedDuration,
+            wordCount
+          })
+        }
+
+        // Show immediate feedback to user
+        console.log('[Chat Interface] ⚡ TTS IMMEDIATE PROCESSING COMPLETE - Audio tab switched, placeholder created')
+      }
+    }
+  }, [messages, onAudioGenerationStart, onCanvasTabChange, isReverseEngineeringRequest])
+
   // Handle model change
   const handleModelChange = useCallback((model: string) => {
     setSelectedModel(model)
@@ -1496,14 +1945,20 @@ export default function ChatInterface({
       attachmentsDisplayedRef.current.clear()
       sentFilesRef.current.clear()
       processedImageGenerationRef.current.clear()
+      processedTTSGenerationRef.current.clear()
+      lastToastTimeRef.current = 0
+      lastToastMessageRef.current = ''
       initialMessageCountRef.current = 0
-      console.log('[Chat Reset] Cleared sent files and image generation tracking')
+      console.log('[Chat Reset] Cleared sent files, image generation, TTS tracking, and toast refs')
     } else if (chatId !== prevChatIdRef.current) {
       // Chat ID changed - switching between chats
       processedImageGenerationRef.current.clear()
-      console.log('[Chat Switch] Cleared processed image generation tracking for chat:', chatId)
+      processedTTSGenerationRef.current.clear()
+      lastToastTimeRef.current = 0
+      lastToastMessageRef.current = ''
+      console.log('[Chat Switch] Cleared processed image, TTS generation tracking, and toast refs for chat:', chatId)
     }
-    
+
     // Update the previous chat ID
     prevChatIdRef.current = chatId
   }, [chatId, onResetChat])
@@ -1546,6 +2001,68 @@ export default function ChatInterface({
   // Process a single file (extracted from handleFileSelect for reuse)
   const processFile = useCallback(async (file: File): Promise<FileUpload> => {
     const fileUpload: FileUpload = { file }
+
+    // Check if file already has geminiFile property (e.g., from YouTube/Instagram download)
+    if ((file as any).geminiFile || (file as any).isPreUploaded) {
+      console.log(`[processFile] Pre-uploaded file detected: ${file.name}`, {
+        hasGeminiFile: !!(file as any).geminiFile,
+        isPreUploaded: (file as any).isPreUploaded,
+        hasVideoThumbnail: !!(file as any).videoThumbnail,
+        fileSize: file.size,
+        fileType: file.type,
+        geminiUri: (file as any).geminiFile?.uri,
+        geminiDisplayName: (file as any).geminiFile?.displayName,
+        videoThumbnailLength: (file as any).videoThumbnail?.length || 0
+      })
+
+      fileUpload.geminiFile = (file as any).geminiFile
+
+      // For pre-uploaded files, we might need to generate preview differently
+      // since the actual file content might be minimal
+      if (file.type.startsWith("video/")) {
+        // Check if the file has a pre-extracted thumbnail from YouTube/Instagram
+        if ((file as any).videoThumbnail) {
+          console.log(`[processFile] Using pre-extracted thumbnail for: ${file.name}`, {
+            thumbnailLength: (file as any).videoThumbnail?.length || 0,
+            isDataUrl: (file as any).videoThumbnail?.startsWith('data:'),
+            thumbnailPreview: (file as any).videoThumbnail?.substring(0, 100),
+            isInstagramVideo: (file as any)._isInstagramVideo
+          })
+          fileUpload.videoThumbnail = (file as any).videoThumbnail
+          // Don't set preview for videos - it's for images
+          // fileUpload.preview = (file as any).videoThumbnail
+        } else {
+          // For videos without thumbnails, we can't generate from dummy content
+          console.log(`[processFile] No thumbnail available for pre-uploaded video: ${file.name}`)
+          
+          // If this is an Instagram video without thumbnail, flag it for debugging
+          if ((file as any)._isInstagramVideo) {
+            console.error('[processFile] Instagram video missing thumbnail!', {
+              fileName: file.name,
+              fileType: file.type,
+              hasGeminiFile: !!(file as any).geminiFile
+            });
+          }
+        }
+      } else if (file.type.startsWith("image/")) {
+        // For images, we might want to fetch the actual image data
+        // For now, we'll skip preview generation for pre-uploaded images
+        console.log(`[processFile] Pre-uploaded image detected, skipping preview generation`)
+      }
+
+      // Store file reference for later use
+      if (fileUpload.geminiFile && fileUpload.geminiFile.uri) {
+        uploadedFilesRef.current.set(fileUpload.geminiFile.uri, fileUpload)
+      }
+
+      // Final Instagram thumbnail check
+      if (file.name.toLowerCase().includes('instagram')) {
+        ensureInstagramThumbnail(fileUpload);
+        ensureInstagramThumbnail(file);
+      }
+      
+      return fileUpload
+    }
 
     // Create preview for images
     if (file.type.startsWith("image/")) {
@@ -2135,6 +2652,9 @@ export default function ChatInterface({
           // Reset converting status
           setUploadStatus('uploading')
           setUploadProgress(0)
+        } else if ((file as any).isPreUploaded || (file as any).geminiFile) {
+          // For pre-uploaded images, skip preview generation
+          console.log('[Upload] Pre-uploaded image detected, skipping preview generation')
         } else {
           // Convert to data URL for image editing compatibility
           const reader = new FileReader()
@@ -2153,22 +2673,32 @@ export default function ChatInterface({
           reader.readAsDataURL(file)
         })
       } else if (file.type.startsWith("video/")) {
-        // For video files, convert to data URL for persistence
-        const reader = new FileReader()
-        preview = await new Promise<string>((resolve, reject) => {
-          reader.onload = () => resolve(reader.result as string)
-          reader.onerror = reject
-          reader.readAsDataURL(file)
-        })
+        // Check if this is a pre-uploaded video (e.g., from Instagram/YouTube)
+        if ((file as any).isPreUploaded || (file as any).geminiFile) {
+          console.log('[Upload] Pre-uploaded video detected, skipping preview generation')
+          // For pre-uploaded videos, check if thumbnail was provided by download service
+          if ((file as any).videoThumbnail) {
+            videoThumbnail = (file as any).videoThumbnail
+            console.log('[Upload] Using pre-extracted video thumbnail')
+          }
+        } else {
+          // For video files, convert to data URL for persistence
+          const reader = new FileReader()
+          preview = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string)
+            reader.onerror = reject
+            reader.readAsDataURL(file)
+          })
 
-        try {
-          // Generate thumbnail at 2 seconds (or 0 if video is shorter)
-          videoThumbnail = await generateVideoThumbnail(file, 2.0)
-          videoDuration = await getVideoDuration(file)
-          console.log('Video thumbnail generated, duration:', videoDuration)
-        } catch (thumbError) {
-          console.error('Failed to generate video thumbnail:', thumbError)
-          // Continue without thumbnail
+          try {
+            // Generate thumbnail at 2 seconds (or 0 if video is shorter)
+            videoThumbnail = await generateVideoThumbnail(file, 2.0)
+            videoDuration = await getVideoDuration(file)
+            console.log('Video thumbnail generated, duration:', videoDuration)
+          } catch (thumbError) {
+            console.error('Failed to generate video thumbnail:', thumbError)
+            // Continue without thumbnail
+          }
         }
       }
 
@@ -2200,51 +2730,74 @@ export default function ChatInterface({
         }
       }, 100)
 
-      // Upload to Gemini
-      const formData = new FormData()
-      formData.append("file", file)
+      // Check if file is already uploaded (e.g., from YouTube/Instagram download)
+      let data
+      if ((file as any).geminiFile || (file as any).isPreUploaded) {
+        console.log('[Upload] Pre-uploaded file detected, skipping upload:', {
+          fileName: file.name,
+          hasGeminiFile: !!(file as any).geminiFile,
+          isPreUploaded: !!(file as any).isPreUploaded,
+          hasVideoThumbnail: !!(file as any).videoThumbnail,
+          videoThumbnailValue: videoThumbnail,
+          extractedThumbnail: (file as any).videoThumbnail?.substring(0, 50)
+        })
 
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      })
+        // Skip progress animation for pre-uploaded files
+        clearInterval(progressInterval)
+        setUploadProgress(100)
 
-      clearInterval(progressInterval)
+        // Create a mock successful response
+        data = {
+          success: true,
+          file: (file as any).geminiFile
+        }
+      } else {
+        // Upload to Gemini
+        const formData = new FormData()
+        formData.append("file", file)
 
-      // Smooth transition to 100% with visible animation
-      console.log('[Upload Progress] Upload API call completed, animating to 100%')
+        const response = await fetch("/api/upload", {
+          method: "POST",
+          body: formData,
+        })
 
-      // Animate from current progress to 100%
-      const currentProgress = lastProgress || 90
-      const steps = 10
-      const stepDelay = 50 // 50ms between steps for smooth animation
+        clearInterval(progressInterval)
 
-      for (let i = 1; i <= steps; i++) {
-        const progress = currentProgress + Math.round((100 - currentProgress) * i / steps)
-        setUploadProgress(progress)
-        await new Promise(resolve => setTimeout(resolve, stepDelay))
-      }
+        // Smooth transition to 100% with visible animation
+        console.log('[Upload Progress] Upload API call completed, animating to 100%')
 
-      console.log('[Upload Progress] 100% - Upload complete!')
+        // Animate from current progress to 100%
+        const currentProgress = lastProgress || 90
+        const steps = 10
+        const stepDelay = 50 // 50ms between steps for smooth animation
 
-      if (!response.ok) {
-        // Try to get detailed error information from the response
-        let errorData
-        try {
-          errorData = await response.json()
-        } catch (parseError) {
-          console.error('[Upload] Failed to parse error response:', parseError)
-          throw new Error(`Upload failed with status ${response.status}`)
+        for (let i = 1; i <= steps; i++) {
+          const progress = currentProgress + Math.round((100 - currentProgress) * i / steps)
+          setUploadProgress(progress)
+          await new Promise(resolve => setTimeout(resolve, stepDelay))
         }
 
-        console.error('[Upload] Server error response:', errorData)
+        console.log('[Upload Progress] 100% - Upload complete!')
 
-        // Use the detailed error message from the server if available
-        const errorMessage = errorData.details || errorData.error || `Upload failed with status ${response.status}`
-        throw new Error(errorMessage)
+        if (!response.ok) {
+          // Try to get detailed error information from the response
+          let errorData
+          try {
+            errorData = await response.json()
+          } catch (parseError) {
+            console.error('[Upload] Failed to parse error response:', parseError)
+            throw new Error(`Upload failed with status ${response.status}`)
+          }
+
+          console.error('[Upload] Server error response:', errorData)
+
+          // Use the detailed error message from the server if available
+          const errorMessage = errorData.details || errorData.error || `Upload failed with status ${response.status}`
+          throw new Error(errorMessage)
+        }
+
+        data = await response.json()
       }
-
-      const data = await response.json()
 
       // Validate the response data
       if (!data.success || !data.file) {
@@ -2294,6 +2847,13 @@ export default function ChatInterface({
         videoDuration,
         aspectRatio,
       }
+
+      console.log('[Upload] Setting selected file:', {
+        fileName: file.name,
+        hasVideoThumbnail: !!videoThumbnail,
+        thumbnailLength: videoThumbnail?.length || 0,
+        thumbnailPrefix: videoThumbnail?.substring(0, 50)
+      })
 
       setSelectedFile(fileUploadData)
 
@@ -2838,7 +3398,7 @@ You can view it in the **Images** tab on the right.`,
 
           // Add to existing gallery with proper error handling
           try {
-            const updatedImages = [...generatedImages, uploadedImage]
+            const updatedImages = [uploadedImage, ...generatedImages]
             console.log('[ChatInterface] Adding uploaded image to gallery...')
 
             onGeneratedImagesChange?.(updatedImages)
@@ -3201,8 +3761,21 @@ Please provide actionable insights that would help someone recreate a similar vi
         },
         options: ['analyze', 'edit', 'animate']
       });
+    } else if (file.file.type.startsWith('video/')) {
+      // For videos, show analyze and reverse-engineer options
+      setFilePreviewModal({
+        isOpen: true,
+        file: {
+          name: file.file.name,
+          url: file.preview || '',
+          contentType: file.file.type,
+          videoThumbnail: file.videoThumbnail,
+          videoDuration: file.videoDuration
+        },
+        options: ['analyze', 'reverse-engineer']
+      });
     } else {
-      // For non-images, only show analyze option
+      // For other files, only show analyze option
       setFilePreviewModal({
         isOpen: true,
         file: {
@@ -3221,7 +3794,7 @@ Please provide actionable insights that would help someone recreate a similar vi
   }, [selectedFile]);
 
   // Handle file preview modal option selection
-  const handleFilePreviewOptionSelect = useCallback((option: 'analyze' | 'edit' | 'animate') => {
+  const handleFilePreviewOptionSelect = useCallback((option: 'analyze' | 'edit' | 'animate' | 'reverse-engineer') => {
     console.log('[handleFilePreviewOptionSelect] Option selected:', option);
 
     // Close the modal first
@@ -3247,6 +3820,40 @@ Please provide actionable insights that would help someone recreate a similar vi
 
       setTimeout(() => {
         console.log('[handleFilePreviewOptionSelect] Submitting analysis request for:', file.name);
+        handleSubmitRef.current?.();
+      }, 100);
+    } else if (option === 'reverse-engineer') {
+      // For reverse-engineer, use the same prompt as video reverse engineering
+      const file = filePreviewModal.file;
+      const reverseEngineerPrompt = `Please reverse engineer this video and provide a complete breakdown including:
+
+1. **Complete Audio Transcription with Timestamps**:
+   - Provide COMPLETE word-for-word transcription of ALL spoken content
+   - Use precise timestamps in [MM:SS] format
+   - Include all dialogue, narration, and audio events
+
+2. **Production Breakdown**:
+   - Estimated tools and software used
+   - Editing techniques and transitions
+   - Visual effects and how they were achieved
+
+3. **Content Structure & Script Analysis**:
+   - Script reconstruction based on transcription
+   - Storytelling techniques and timing
+   - Pacing decisions
+
+4. **Technical Recreation Guide**:
+   - Step-by-step guide to recreate similar content
+   - Required equipment and software
+   - Production workflow
+
+Please analyze the entire video: ${file.name}`;
+
+      // Set the reverse engineering prompt and submit
+      handleInputChange({ target: { value: reverseEngineerPrompt } } as React.ChangeEvent<HTMLInputElement>);
+
+      setTimeout(() => {
+        console.log('[handleFilePreviewOptionSelect] Submitting reverse engineering request for:', file.name);
         handleSubmitRef.current?.();
       }, 100);
     } else {
@@ -3302,8 +3909,8 @@ Please provide actionable insights that would help someone recreate a similar vi
           geminiUri: attachment.url
         }
 
-        // Add to gallery
-        onGeneratedImagesChange?.([...generatedImages, uploadedImage])
+        // Add to gallery at the beginning
+        onGeneratedImagesChange?.([uploadedImage, ...generatedImages])
 
         // Request auto-open of edit modal
         onEditImageRequested?.(uploadedImage.id)
@@ -3341,7 +3948,55 @@ Please provide actionable insights that would help someone recreate a similar vi
     }
   }, [handleImageOptionSelect, selectedFile, messages, onGeneratedImagesChange, onEditImageRequested, onImageGenerationStart, imageQuality, currentImageSettings]);
 
-  const handleSubmit = useCallback((e?: React.FormEvent) => {
+  // Handle deep research mode toggle
+  const handleDeepResearch = useCallback(async (searchQuery?: string) => {
+    setIsDeepResearchMode(prev => !prev)
+    if (!isDeepResearchMode) {
+      // Activating deep research mode
+      const query = searchQuery || input.trim()
+      const hasQuery = query && query.length > 0
+
+      try {
+        // Start browser agent session
+        const session = await browserAgent.startSession()
+
+        toast.info('Deep Research Mode Active', {
+          description: hasQuery ? `Searching for: ${query}` : 'Browser agent ready for research',
+          duration: 5000
+        })
+
+        // Switch to browser tab
+        if (onCanvasTabChange) {
+          onCanvasTabChange('browser')
+        }
+
+        // If we have a query, send it to the browser agent
+        if (hasQuery) {
+          await browserAgent.sendCommand(query)
+        }
+
+        // Show the deep research panel
+        setShowDeepResearchPanel(true)
+
+      } catch (error) {
+        console.error('[handleDeepResearch] Failed to start browser agent:', error)
+        toast.error('Failed to activate deep research mode', {
+          description: error instanceof Error ? error.message : 'Unknown error'
+        })
+        setIsDeepResearchMode(false)
+      }
+    } else {
+      // Deactivating deep research mode
+      browserAgent.endSession()
+      setIsDeepResearchMode(false)
+      toast.info('Deep Research Mode Deactivated', {
+        description: 'Regular chat mode restored'
+      })
+      setShowDeepResearchPanel(false)
+    }
+  }, [isDeepResearchMode, onCanvasTabChange, input, browserAgent])
+
+  const handleSubmit = useCallback(async (e?: React.FormEvent) => {
     // Prevent default form submission
     if (e) {
       e.preventDefault()
@@ -3431,22 +4086,52 @@ Please provide actionable insights that would help someone recreate a similar vi
 
       // Use the first file as primary attachment
       const primaryFile = allFiles[0]
+
+      console.log('[handleSubmit] Creating pendingAttachmentRef with:', {
+        fileName: primaryFile.file.name,
+        hasGeminiFile: !!primaryFile.geminiFile,
+        geminiUri: primaryFile.geminiFile?.uri,
+        hasPreview: !!primaryFile.preview,
+        hasVideoThumbnail: !!primaryFile.videoThumbnail,
+        videoThumbnailLength: primaryFile.videoThumbnail?.length || 0
+      })
+
+      // Helper function to get playable URL
+      const getPlayableUrl = (file: any) => {
+        if (file.geminiFile?.uri) {
+          // For Gemini URIs, use the proxy endpoint to make them playable
+          return `/api/video-proxy?uri=${encodeURIComponent(file.geminiFile.uri)}`
+        }
+        return file.preview || ''
+      }
+
       pendingAttachmentRef.current = {
         name: primaryFile.file.name,
         contentType: primaryFile.file.type,
-        url: primaryFile.preview || '',
+        url: getPlayableUrl(primaryFile),
         transcription: primaryFile.transcription,
         videoThumbnail: primaryFile.videoThumbnail,
         videoDuration: primaryFile.videoDuration,
         additionalFiles: allFiles.slice(1).map(file => ({
           name: file.file.name,
           contentType: file.file.type,
-          url: file.preview || '',
+          url: getPlayableUrl(file),
           transcription: file.transcription,
           videoThumbnail: file.videoThumbnail,
           videoDuration: file.videoDuration,
         }))
       }
+
+      console.log('[ATTACHMENT DEBUG] Created pendingAttachmentRef:', {
+        name: pendingAttachmentRef.current.name,
+        contentType: pendingAttachmentRef.current.contentType,
+        url: pendingAttachmentRef.current.url,
+        hasVideoThumbnail: !!pendingAttachmentRef.current.videoThumbnail,
+        videoThumbnailLength: pendingAttachmentRef.current.videoThumbnail?.length || 0,
+        videoDuration: pendingAttachmentRef.current.videoDuration,
+        originalGeminiUri: primaryFile.geminiFile?.uri,
+        urlSource: primaryFile.geminiFile?.uri ? 'proxy-url' : primaryFile.preview ? 'preview' : 'empty'
+      })
 
       // Create a backup to ensure attachments persist
       pendingAttachmentBackupRef.current = { ...pendingAttachmentRef.current };
@@ -3468,7 +4153,7 @@ Please provide actionable insights that would help someone recreate a similar vi
           {
             name: primaryFile.file.name,
             contentType: primaryFile.file.type,
-            url: primaryFile.preview || '',
+            url: getPlayableUrl(primaryFile),
             transcription: primaryFile.transcription,
             videoThumbnail: primaryFile.videoThumbnail,
             videoDuration: primaryFile.videoDuration
@@ -3476,7 +4161,7 @@ Please provide actionable insights that would help someone recreate a similar vi
           ...allFiles.slice(1).map(file => ({
             name: file.file.name,
             contentType: file.file.type,
-            url: file.preview || '',
+            url: getPlayableUrl(file),
             transcription: file.transcription,
             videoThumbnail: file.videoThumbnail,
             videoDuration: file.videoDuration,
@@ -3516,20 +4201,130 @@ Please provide actionable insights that would help someone recreate a similar vi
       console.log('[SUBMIT] Tracked sent files:', Array.from(sentFilesRef.current))
     }
 
-    // Prepend "deep research on" if in deep research mode
+    // Handle deep research mode routing
     const trimmedInput = input.trim()
-    if (isDeepResearchMode && trimmedInput) {
-      console.log('[SUBMIT] Deep research mode active, prepending trigger')
-      handleInputChange({ target: { value: `deep research on ${trimmedInput}` } } as React.ChangeEvent<HTMLInputElement>)
 
-      // Use setTimeout to ensure the input change is processed before submitting
-      // Reset deep research mode AFTER the submission completes
-      setTimeout(() => {
-        originalHandleSubmit(e)
-        // Reset deep research mode after successful submission
-        setIsDeepResearchMode(false)
-      }, 10)
-      return
+    // REMOVED: Automatic research query detection that was bypassing user toggle preference
+    // Deep research mode should ONLY be activated by explicit user action (clicking the toggle button)
+
+    // If in deep research mode, modify the input to trigger the backend deep research handler
+    if (isDeepResearchMode && trimmedInput) {
+      console.log('[SUBMIT] Deep research mode active - sending to chat API with deep research prefix')
+
+      // Modify the input to include the deep research prefix for the backend
+      const deepResearchInput = `deep research on ${trimmedInput}`
+      handleInputChange({ target: { value: deepResearchInput } } as React.ChangeEvent<HTMLInputElement>)
+
+      // Also send to browser agent for real-time feedback
+      if (browserAgent.isActive) {
+        try {
+          await browserAgent.sendCommand(trimmedInput)
+        } catch (error) {
+          console.error('[SUBMIT] Failed to send command to browser agent:', error)
+          // Don't block the main submission if browser agent fails
+        }
+      } else {
+        // Try to start browser agent session but don't block if it fails
+        try {
+          await browserAgent.startSession()
+          await browserAgent.sendCommand(trimmedInput)
+        } catch (error) {
+          console.error('[SUBMIT] Failed to start browser agent:', error)
+          // Continue with chat API submission even if browser agent fails
+        }
+      }
+
+      // Continue to submit to chat API with the modified input
+      // The backend will handle the "deep research on" prefix and route appropriately
+    }
+
+    // Check if this is a browser task request - ONLY when deep research mode is active
+    // Regular web searches should use Perplexity API without browser tab switching
+    if (isDeepResearchMode) {
+      const browserTaskInfo = shouldTriggerBrowserTask(trimmedInput)
+      if (browserTaskInfo.shouldTrigger) {
+        console.log('[SUBMIT] Browser task detected in deep research mode:', browserTaskInfo)
+
+        // Switch to browser tab only in deep research mode
+        if (onCanvasTabChange) {
+          onCanvasTabChange('browser')
+          toast.info('Switched to Browser tab', {
+            description: `Deep research: ${browserTaskInfo.taskType}`,
+            duration: 3000
+          })
+        }
+
+        // Start browser session if not already active
+        if (!browserSession) {
+          startBrowserSession().then(async (session) => {
+            if (session && browserTaskInfo.url) {
+              // Navigate to the URL if provided
+              await navigateToBrowser(browserTaskInfo.url)
+            } else if (session && browserTaskInfo.query) {
+              // Generate search URL from query
+              const searchUrl = generateSearchUrl(browserTaskInfo.query)
+              await navigateToBrowser(searchUrl)
+            }
+          }).catch(error => {
+            console.error('Failed to start browser session:', error)
+            toast.error('Failed to start browser', {
+              description: 'Please ensure the browser WebSocket server is running'
+            })
+          })
+        } else {
+          // Browser session already active
+          if (browserTaskInfo.url) {
+            navigateToBrowser(browserTaskInfo.url)
+          } else if (browserTaskInfo.query) {
+            const searchUrl = generateSearchUrl(browserTaskInfo.query)
+            navigateToBrowser(searchUrl)
+          }
+        }
+      }
+    }
+
+    // Check if this is a TTS generation request and handle early detection
+    if (trimmedInput && (containsTTSCommand(trimmedInput) || containsMultiSpeakerTTSCommand(trimmedInput))) {
+      console.log('[SUBMIT] TTS generation detected, switching to audio tab')
+
+      // Extract TTS content for placeholder
+      const ttsContent = extractTTSContent(trimmedInput)
+      const wordCount = ttsContent.text.split(/\s+/).length
+      const estimatedSeconds = Math.max(10, Math.ceil(wordCount / 2.5))
+      const estimatedDuration = estimatedSeconds < 60 ? `${estimatedSeconds}s` : `${Math.ceil(estimatedSeconds / 60)}m`
+
+      // Switch to audio tab immediately
+      if (onCanvasTabChange) {
+        onCanvasTabChange('audio')
+        toast.info('Switched to Audio tab', {
+          description: 'TTS generation starting...',
+          duration: 3000
+        })
+      }
+
+      // Create placeholder audio entry for immediate feedback
+      if (onGeneratedAudioChange) {
+        const placeholderAudio = {
+          id: `tts-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`,
+          text: ttsContent.text,
+          script: ttsContent.multiSpeaker ? ttsContent.text : undefined,
+          audioBase64: '',
+          mimeType: 'audio/mpeg',
+          timestamp: Date.now(),
+          voiceName: ttsContent.multiSpeaker ? 'Multi-Speaker' : (ttsContent.voiceName || 'Eva'),
+          isMultiSpeaker: ttsContent.multiSpeaker,
+          provider: 'wavespeed',
+          isGenerating: true,
+          progress: 0,
+          estimatedDuration,
+          status: 'generating' as const,
+          generationPhase: 'Initializing WaveSpeed API'
+        }
+
+        // Add placeholder to audio gallery
+        onGeneratedAudioChange(placeholderAudio)
+        console.log('[SUBMIT] Created TTS placeholder audio:', placeholderAudio.id)
+      }
     }
 
     // Only call originalHandleSubmit if we have a valid message or pending attachments
@@ -3551,10 +4346,43 @@ Please provide actionable insights that would help someone recreate a similar vi
 
     // Don't clear files immediately - let the useEffect handle it after message is processed
     // The files will be cleared when pendingAttachmentRef.current is processed and cleared
-  }, [input, selectedFile, selectedFiles, originalHandleSubmit, handleInputChange, chatId, messages, messageAttachments, onMessagesChange, isDeepResearchMode, setIsDeepResearchMode])
+  }, [input, selectedFile, selectedFiles, originalHandleSubmit, handleInputChange, chatId, messages, messageAttachments, onMessagesChange, isDeepResearchMode, setIsDeepResearchMode, onCanvasTabChange, browserSession, startBrowserSession, navigateToBrowser, browserAgent, handleDeepResearch])
 
   // Store handleSubmit in ref to avoid temporal dead zone issues
   handleSubmitRef.current = handleSubmit
+
+  // Listen for browser content extraction events
+  useEffect(() => {
+    const handleBrowserContentExtract = (event: CustomEvent) => {
+      const { url, title, request } = event.detail
+
+      // Create a message asking the AI to analyze the page
+      const analysisPrompt = `Please analyze the content from this webpage:
+URL: ${url}
+Title: ${title}
+
+Since I cannot directly access the webpage content from an embedded iframe due to security restrictions, please provide:
+1. General information about this topic based on the URL and title
+2. Key concepts and important points related to "${title}"
+3. Any insights or analysis you can provide
+
+Note: For full content analysis, you may want to open the page in a new tab.`
+
+      // Set the input and trigger submission
+      handleInputChange({ target: { value: analysisPrompt } } as React.ChangeEvent<HTMLInputElement>)
+
+      // Show notification
+      toast.info('Analysis Request Prepared', {
+        description: 'Review the message and press Enter to send',
+        duration: 3000
+      })
+    }
+
+    window.addEventListener('browser-content-extract', handleBrowserContentExtract as EventListener)
+    return () => {
+      window.removeEventListener('browser-content-extract', handleBrowserContentExtract as EventListener)
+    }
+  }, [handleInputChange])
 
   // Auto-hide image options when no files are available - with extended delay
   useEffect(() => {
@@ -3760,32 +4588,13 @@ Please provide actionable insights that would help someone recreate a similar vi
         scrollArea.scrollTop = scrollArea.scrollHeight
       }
     }, 100)
-  }, [append, selectedModel, currentImageSettings, imageEditingModel, chatId, onAnimateImage])
+  }, [append, selectedModel, currentImageSettings, imageEditingModel, onAnimateImage])
 
   // Handle prompt enhancement
   const handleEnhancePrompt = useCallback((originalPrompt: string, enhancedPrompt: string) => {
     console.log('[Chat Interface] Prompt enhanced:', { originalPrompt, enhancedPrompt })
     toast.success('Prompt enhanced successfully!')
   }, [])
-
-  // Handle deep research mode toggle
-  const handleDeepResearch = useCallback(() => {
-    setIsDeepResearchMode(prev => !prev)
-    if (!isDeepResearchMode) {
-      // Activating deep research mode
-      toast.info('Deep Research Mode Active', {
-        description: 'Your next message will trigger comprehensive research with Perplexity Sonar',
-        duration: 5000
-      })
-      // Show the deep research panel immediately
-      setShowDeepResearchPanel(true)
-    } else {
-      // Deactivating deep research mode
-      toast.info('Deep Research Mode Deactivated', {
-        description: 'Regular chat mode restored'
-      })
-    }
-  }, [isDeepResearchMode])
 
   // Handle edit dialog confirmation
   const handleEditConfirm = useCallback(async (prompt: string) => {
@@ -3942,6 +4751,10 @@ Please provide actionable insights that would help someone recreate a similar vi
           const event = new Event('submit', { bubbles: true, cancelable: true }) as any
           event.preventDefault = () => {}
           originalHandleSubmit(event)
+          // Clear the input after submission
+          setTimeout(() => {
+            handleInputChange({ target: { value: '' } } as React.ChangeEvent<HTMLInputElement>)
+          }, 50)
         }, 100)
         break;
 
@@ -3970,8 +4783,8 @@ Please provide actionable insights that would help someone recreate a similar vi
             prompt: uploadedImage.prompt
           })
 
-          // Add to gallery
-          onGeneratedImagesChange?.([...generatedImages, uploadedImage])
+          // Add to gallery at the beginning
+          onGeneratedImagesChange?.([uploadedImage, ...generatedImages])
 
           // Request auto-open of edit modal
           onEditImageRequested?.(uploadedImage.id)
@@ -3999,6 +4812,10 @@ Please provide actionable insights that would help someone recreate a similar vi
           const event = new Event('submit', { bubbles: true, cancelable: true }) as any
           event.preventDefault = () => {}
           originalHandleSubmit(event)
+          // Clear the input after submission
+          setTimeout(() => {
+            handleInputChange({ target: { value: '' } } as React.ChangeEvent<HTMLInputElement>)
+          }, 50)
         }, 100)
         break;
     }
@@ -4058,6 +4875,10 @@ Please ensure you analyze the ENTIRE video duration from beginning to end with p
         console.log('[ChatInterface] Submitting video analysis request')
         const event = new Event('submit') as any
         originalHandleSubmit(event)
+        // Clear the input after submission
+        setTimeout(() => {
+          handleInputChange({ target: { value: '' } } as React.ChangeEvent<HTMLInputElement>)
+        }, 50)
       }, 100)
     } else if (optionId === 'reverse-engineer') {
       // Use enhanced reverse engineering prompt with transcription
@@ -4117,6 +4938,10 @@ Please provide actionable insights that would help someone recreate a similar vi
         console.log('[ChatInterface] Submitting video reverse engineering request')
         const event = new Event('submit') as any
         originalHandleSubmit(event)
+        // Clear the input after submission
+        setTimeout(() => {
+          handleInputChange({ target: { value: '' } } as React.ChangeEvent<HTMLInputElement>)
+        }, 50)
       }, 100)
     }
   }, [handleInputChange, originalHandleSubmit])
@@ -4338,7 +5163,7 @@ Please provide actionable insights that would help someone recreate a similar vi
         // Store the mapping
         placeholderIdsRef.current.set(lastUserMessage.id, placeholderId)
 
-        // Add placeholder to gallery
+        // Add placeholder to gallery at the end to maintain chronological order
         onGeneratedImagesChange?.([...generatedImages, placeholderImage])
 
         // Switch to Images tab
@@ -4510,16 +5335,17 @@ Please provide actionable insights that would help someone recreate a similar vi
                             onGeneratedImagesChange(updated)
                           }
                         } else {
-                          // No placeholder, just add new images
+                          // No placeholder, just add new images at the end to maintain chronological order
                           onGeneratedImagesChange([...generatedImages, ...convertedImages])
                         }
                       }
 
                       // Show success message
-                      toast.success(`Generated ${convertedImages.length} image${convertedImages.length > 1 ? 's' : ''}!`, {
-                        description: "Images are now available in the Images tab",
-                        duration: 3000
-                      })
+                      // Commented out to prevent duplicate toasts - main toast is shown in IMAGE_GENERATION_COMPLETED handler
+                      // toast.success(`Generated ${convertedImages.length} image${convertedImages.length > 1 ? 's' : ''}!`, {
+                      //   description: "Images are now available in the Images tab",
+                      //   duration: 3000
+                      // })
                     }
                   } else {
                     console.log('[Chat Interface] No images found in API response')
@@ -4580,16 +5406,17 @@ Please provide actionable insights that would help someone recreate a similar vi
                     onGeneratedImagesChange(updated)
                   }
                 } else {
-                  // No placeholder, just add new images
+                  // No placeholder, just add new images at the end to maintain chronological order
                   onGeneratedImagesChange([...generatedImages, ...newImages])
                 }
               }
 
               // Show success message
-              toast.success(`Generated ${newImages.length} image${newImages.length > 1 ? 's' : ''}!`, {
-                description: "Images are now available in the Images tab",
-                duration: 3000
-              })
+              // Commented out to prevent duplicate toasts - main toast is shown in IMAGE_GENERATION_COMPLETED handler
+              // toast.success(`Generated ${newImages.length} image${newImages.length > 1 ? 's' : ''}!`, {
+              //   description: "Images are now available in the Images tab",
+              //   duration: 3000
+              // })
             }
 
             // Note: Image processing is now handled above in the new notification format
@@ -4608,41 +5435,8 @@ Please provide actionable insights that would help someone recreate a similar vi
         }
       }
 
-      // Check for IMAGE_EDITING_COMPLETED pattern (already handled elsewhere but included for completeness)
-      const imageEditMatch = lastMessage.content.match(/\[IMAGE_EDITING_COMPLETED\]([\s\S]*?)\[\/IMAGE_EDITING_COMPLETED\]/)
-      if (imageEditMatch) {
-        try {
-          const imageData = JSON.parse(imageEditMatch[1])
-          console.log('[Chat Interface] Found IMAGE_EDITING_COMPLETED data:', imageData)
-
-          if (imageData.success && imageData.images && imageData.images.length > 0) {
-            // Process edited image
-            const editedImage = {
-              id: generateImageId(),
-              prompt: imageData.prompt || 'Edited image',
-              url: imageData.images[0].url,
-              timestamp: new Date(),
-              quality: 'hd' as const,
-              model: 'gpt-image-1',
-              isGenerating: false,
-              originalImageId: imageData.originalImageId
-            }
-
-            // Add edited image to the gallery
-            onGeneratedImagesChange?.([...generatedImages, editedImage])
-
-            // Switch to images tab
-            onImageGenerationStart?.()
-
-            // Show success notification
-            toast.success("Image edited successfully!", {
-              duration: 3000
-            })
-          }
-        } catch (e) {
-          console.error('Failed to parse image editing data:', e)
-        }
-      }
+      // IMAGE_EDITING_COMPLETED pattern is no longer needed as image editing now uses placeholders
+      // The edited images are handled through the normal image generation flow
     }
   }, [messages, onGeneratedImagesChange, onImageGenerationStart, completeImageGeneration, failImageGeneration, generatedImages])
 
@@ -4660,7 +5454,7 @@ Please provide actionable insights that would help someone recreate a similar vi
       isGenerating: false,
     }
 
-    // Add to generated images
+    // Add to generated images at the end to maintain chronological order
     if (onGeneratedImagesChange) {
       onGeneratedImagesChange([...generatedImages, tempImage])
     }
@@ -4687,7 +5481,7 @@ Please provide actionable insights that would help someone recreate a similar vi
   const handleMultiImageEditComplete = useCallback((editedImage: GeneratedImage) => {
     console.log('[ChatInterface] Multi-image edit completed:', editedImage.id)
 
-    // Add the edited image to the gallery
+    // Add the edited image to the gallery at the end to maintain chronological order
     if (onGeneratedImagesChange) {
       onGeneratedImagesChange([...generatedImages, editedImage])
     }
@@ -4841,14 +5635,27 @@ Please provide actionable insights that would help someone recreate a similar vi
               const tempAttachments: any[] = [];
 
               // Add the primary attachment
-              tempAttachments.push({
+              const primaryAttachment = {
                 name: pendingAttachment.name,
                 contentType: pendingAttachment.contentType,
-                url: pendingAttachment.url,
+                url: pendingAttachment.url || pendingAttachment.videoUrl || pendingAttachment.geminiFileUri, // Try video URL before Gemini URI
                 transcription: pendingAttachment.transcription,
                 videoThumbnail: pendingAttachment.videoThumbnail,
-                videoDuration: pendingAttachment.videoDuration
-              });
+                videoDuration: pendingAttachment.videoDuration,
+                geminiFileUri: pendingAttachment.geminiFileUri // Preserve Gemini URI
+              };
+
+              // Log for debugging Instagram videos
+              if (pendingAttachment.name.toLowerCase().includes('instagram') && pendingAttachment.contentType?.startsWith('video/')) {
+                console.log('[Instagram Video Attachment]', {
+                  name: pendingAttachment.name,
+                  hasVideoThumbnail: !!pendingAttachment.videoThumbnail,
+                  thumbnailLength: pendingAttachment.videoThumbnail?.length || 0,
+                  thumbnailPreview: pendingAttachment.videoThumbnail?.substring(0, 100)
+                });
+              }
+
+              tempAttachments.push(primaryAttachment);
 
               // Add additional files if they exist
               if (pendingAttachment.additionalFiles && pendingAttachment.additionalFiles.length > 0) {
@@ -4925,7 +5732,7 @@ Please provide actionable insights that would help someone recreate a similar vi
                 experimental_attachments: attachments,
                 toolCalls: message.toolCalls,
               }}
-              mcpToolExecuting={mcpToolExecuting}
+
               onAnimateImage={onAnimateImage}
               onEditImage={handleEditImageFromModal}
               onImageOptionSelect={handleChatImageOptionSelect}
@@ -4936,7 +5743,7 @@ Please provide actionable insights that would help someone recreate a similar vi
               onGenerateVideo={handleReverseEngineeringVideoGeneration}
             />
           );
-        }), [messages, messageAttachments, firstMessageAttachments, mcpToolExecuting, onAnimateImage, handleEditImageFromModal, handleChatImageOptionSelect, handleChatVideoOptionSelect, handleMultiImageOptionSelect, handleFollowUpClick, handleReverseEngineeringAction, handleReverseEngineeringVideoGeneration])}
+        }), [messages, messageAttachments, firstMessageAttachments, onAnimateImage, handleEditImageFromModal, handleChatImageOptionSelect, handleChatVideoOptionSelect, handleMultiImageOptionSelect, handleFollowUpClick, handleReverseEngineeringAction, handleReverseEngineeringVideoGeneration])}
           {/* Render local messages (for image generation feedback) - REMOVED */}
           {/* localMessages.map((message) => (
             <ChatMessage
@@ -4967,24 +5774,58 @@ Please provide actionable insights that would help someone recreate a similar vi
             const lastUserMessage = messages.filter(m => m.role === 'user').pop()
             const isImageGen = lastUserMessage && isImageGenerationRequest(lastUserMessage.content)
 
+            // ENHANCED: Check if the last user message is a TTS request
+            const isTTSGen = lastUserMessage && containsTTSCommand(lastUserMessage.content)
+
+            // ENHANCED: Check if TTS generation is active from hook state
+            const isTTSActive = ttsGenerationState?.isActive
+
+            // Determine the generation type and colors
+            let generationType = 'thinking'
+            let color = 'bg-white'
+            let message = 'Agent is thinking...'
+
+            if (isTTSGen || isTTSActive) {
+              generationType = 'tts'
+              color = 'bg-blue-400'
+              if (ttsGenerationState?.phase && ttsGenerationState?.voiceName) {
+                message = `🎵 Generating audio (${ttsGenerationState.voiceName})...`
+              } else {
+                message = '🎵 Generating audio...'
+              }
+            } else if (isImageGen) {
+              generationType = 'image'
+              color = 'bg-purple-400'
+              message = '🎨 Generating image...'
+            }
+
             return (
               <div className="flex justify-start">
                 <div className="max-w-[85%] rounded-xl px-4 py-3 bg-[#3C3C3C]">
                   <div className="flex items-center space-x-3">
                     <div className="flex space-x-1">
-                      <div className={`w-2 h-2 ${isImageGen ? 'bg-purple-400' : 'bg-white'} rounded-full animate-bounce`} />
+                      <div className={`w-2 h-2 ${color} rounded-full animate-bounce`} />
                       <div
-                        className={`w-2 h-2 ${isImageGen ? 'bg-purple-400' : 'bg-white'} rounded-full animate-bounce [animation-delay:0.1s]`}
+                        className={`w-2 h-2 ${color} rounded-full animate-bounce [animation-delay:0.1s]`}
                       />
                       <div
-                        className={`w-2 h-2 ${isImageGen ? 'bg-purple-400' : 'bg-white'} rounded-full animate-bounce [animation-delay:0.2s]`}
+                        className={`w-2 h-2 ${color} rounded-full animate-bounce [animation-delay:0.2s]`}
                       />
                     </div>
-                    <span className="text-sm text-[#B0B0B0]">
-                      {
-                       isImageGen ? '🎨 Generating image...' :
-                       'Agent is thinking...'}
-                    </span>
+                    <div className="flex flex-col">
+                      <span className="text-sm text-[#B0B0B0]">{message}</span>
+                      {/* ENHANCED: Show TTS progress details if available */}
+                      {isTTSActive && ttsGenerationState && (
+                        <div className="mt-1 text-xs text-[#888888]">
+                          {ttsGenerationState.phase && ttsGenerationState.phase !== 'initializing' && (
+                            <span>{ttsGenerationState.phase}...</span>
+                          )}
+                          {ttsGenerationState.estimatedDuration && (
+                            <span className="ml-2">~{ttsGenerationState.estimatedDuration}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -4993,17 +5834,20 @@ Please provide actionable insights that would help someone recreate a similar vi
         </div>
       </ScrollArea>
 
-      {/* Deep Research Panel */}
-      {showDeepResearchPanel && (
-        <DeepResearchPanel
+      {/* Browser Agent Panel */}
+      {showDeepResearchPanel && browserAgent.isActive && (
+        <BrowserAgentPanel
+          isActive={browserAgent.isActive}
+          isProcessing={browserAgent.isProcessing}
+          actions={browserAgent.actions}
+          error={browserAgent.error}
           onClose={() => {
             setShowDeepResearchPanel(false)
             // Also deactivate deep research mode if it's still active
             if (isDeepResearchMode) {
-              setIsDeepResearchMode(false)
+              handleDeepResearch() // This will toggle it off
             }
           }}
-          className="border-t border-[#333333]"
         />
       )}
 
@@ -5016,7 +5860,7 @@ Please provide actionable insights that would help someone recreate a similar vi
             fileSize={selectedFile?.file.size}
           />
         </AnimatePresence>
-        <div className="p-4 relative">
+        <div className="p-4 relative z-50">
           <InlineImageOptions
             isVisible={(() => {
               // Only show if we have showImageOptions true AND we have actual images
@@ -5052,6 +5896,8 @@ Please provide actionable insights that would help someone recreate a similar vi
             })()}
             onOptionSelect={handleInlineVideoOptionSelect}
           />
+          {/* AgentTaskDisplay removed */}
+
           <AI_Prompt
             value={input}
             onChange={(value: string) => handleInputChange({ target: { value } } as React.ChangeEvent<HTMLInputElement>)}
@@ -5155,6 +6001,7 @@ Please provide actionable insights that would help someone recreate a similar vi
           setSelectedFile(mockFile as any);
           handleImageOptionSelect('animate');
         }}
+        onReverseEngineer={(_fileName, _contentType) => handleFilePreviewOptionSelect('reverse-engineer')}
       />
 
       <VideoGenerationModal

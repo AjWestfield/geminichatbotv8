@@ -9,13 +9,13 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { 
-  Download, 
-  Trash2, 
-  Edit, 
-  Copy, 
-  Archive, 
-  Tag, 
+import {
+  Download,
+  Trash2,
+  Edit,
+  Copy,
+  Archive,
+  Tag,
   FolderPlus,
   CheckCircle,
   XCircle,
@@ -100,11 +100,11 @@ const batchOperations: BatchOperation[] = [
   }
 ]
 
-export function BatchOperationsPanel({ 
-  images, 
-  selectedImageIds, 
-  onSelectionChange, 
-  onImagesUpdate 
+export function BatchOperationsPanel({
+  images,
+  selectedImageIds,
+  onSelectionChange,
+  onImagesUpdate
 }: BatchOperationsPanelProps) {
   const { toast } = useToast()
   const [selectedOperation, setSelectedOperation] = useState<string>('')
@@ -124,7 +124,7 @@ export function BatchOperationsPanel({
 
   const handleSelectByFilter = useCallback((filter: string) => {
     let filteredIds: string[] = []
-    
+
     switch (filter) {
       case 'recent':
         filteredIds = images
@@ -150,7 +150,7 @@ export function BatchOperationsPanel({
           .map(img => img.id)
         break
     }
-    
+
     onSelectionChange(new Set(filteredIds))
   }, [images, onSelectionChange])
 
@@ -221,9 +221,10 @@ export function BatchOperationsPanel({
 
   const handleDownloadBatch = async () => {
     // Implementation for batch download
-    const zip = await import('jszip')
-    const JSZip = zip.default
-    const zipFile = new JSZip()
+    try {
+      const zip = await import('jszip')
+      const JSZip = zip.default
+      const zipFile = new JSZip()
 
     for (const imageId of selectedImageIds) {
       const image = images.find(img => img.id === imageId)
@@ -237,21 +238,25 @@ export function BatchOperationsPanel({
 
         setProgress(prev => prev ? { ...prev, completed: prev.completed + 1 } : null)
       } catch (error) {
-        setProgress(prev => prev ? { 
-          ...prev, 
+        setProgress(prev => prev ? {
+          ...prev,
           failed: prev.failed + 1,
           errors: [...prev.errors, `Failed to download ${image.id}`]
         } : null)
       }
     }
 
-    const zipBlob = await zipFile.generateAsync({ type: 'blob' })
-    const url = URL.createObjectURL(zipBlob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `images-batch-${Date.now()}.zip`
-    a.click()
-    URL.revokeObjectURL(url)
+      const zipBlob = await zipFile.generateAsync({ type: 'blob' })
+      const url = URL.createObjectURL(zipBlob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `images-batch-${Date.now()}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('[BatchOperations] Failed to create zip file:', error)
+      setProgress({ total: 1, completed: 0, failed: 1, errors: ['Failed to create zip file'] })
+    }
   }
 
   const handleDeleteBatch = async () => {
@@ -260,11 +265,11 @@ export function BatchOperationsPanel({
       try {
         const response = await fetch(`/api/images/${imageId}`, { method: 'DELETE' })
         if (!response.ok) throw new Error('Delete failed')
-        
+
         setProgress(prev => prev ? { ...prev, completed: prev.completed + 1 } : null)
       } catch (error) {
-        setProgress(prev => prev ? { 
-          ...prev, 
+        setProgress(prev => prev ? {
+          ...prev,
           failed: prev.failed + 1,
           errors: [...prev.errors, `Failed to delete ${imageId}`]
         } : null)
@@ -279,7 +284,7 @@ export function BatchOperationsPanel({
 
   const handleAddTags = async () => {
     const tags = operationInput.split(',').map(tag => tag.trim()).filter(Boolean)
-    
+
     for (const imageId of selectedImageIds) {
       try {
         const response = await fetch(`/api/images/${imageId}/tags`, {
@@ -288,11 +293,11 @@ export function BatchOperationsPanel({
           body: JSON.stringify({ tags })
         })
         if (!response.ok) throw new Error('Tag addition failed')
-        
+
         setProgress(prev => prev ? { ...prev, completed: prev.completed + 1 } : null)
       } catch (error) {
-        setProgress(prev => prev ? { 
-          ...prev, 
+        setProgress(prev => prev ? {
+          ...prev,
           failed: prev.failed + 1,
           errors: [...prev.errors, `Failed to tag ${imageId}`]
         } : null)
@@ -309,11 +314,11 @@ export function BatchOperationsPanel({
           body: JSON.stringify({ quality: operationInput })
         })
         if (!response.ok) throw new Error('Quality update failed')
-        
+
         setProgress(prev => prev ? { ...prev, completed: prev.completed + 1 } : null)
       } catch (error) {
-        setProgress(prev => prev ? { 
-          ...prev, 
+        setProgress(prev => prev ? {
+          ...prev,
           failed: prev.failed + 1,
           errors: [...prev.errors, `Failed to update ${imageId}`]
         } : null)
@@ -331,7 +336,7 @@ export function BatchOperationsPanel({
       style: img.style
     }))
 
-    const content = prompts.map(p => 
+    const content = prompts.map(p =>
       `# ${p.id}\n**Model:** ${p.model}\n**Quality:** ${p.quality}\n**Style:** ${p.style}\n**Date:** ${new Date(p.timestamp).toLocaleDateString()}\n\n${p.prompt}\n\n---\n`
     ).join('\n')
 
@@ -356,9 +361,9 @@ export function BatchOperationsPanel({
           imageIds: Array.from(selectedImageIds)
         })
       })
-      
+
       if (!response.ok) throw new Error('Collection creation failed')
-      
+
       setProgress({ total: 1, completed: 1, failed: 0, errors: [] })
     } catch (error) {
       setProgress({ total: 1, completed: 0, failed: 1, errors: ['Failed to create collection'] })
@@ -393,7 +398,7 @@ export function BatchOperationsPanel({
           Perform operations on {selectedImageIds.size} selected image{selectedImageIds.size > 1 ? 's' : ''}
         </CardDescription>
       </CardHeader>
-      
+
       <CardContent className="space-y-4">
         {/* Quick Selection */}
         <div className="space-y-2">
@@ -494,8 +499,8 @@ export function BatchOperationsPanel({
                 {progress.completed + progress.failed} / {progress.total}
               </span>
             </div>
-            <Progress 
-              value={(progress.completed + progress.failed) / progress.total * 100} 
+            <Progress
+              value={(progress.completed + progress.failed) / progress.total * 100}
               className="h-2"
             />
             {progress.errors.length > 0 && (

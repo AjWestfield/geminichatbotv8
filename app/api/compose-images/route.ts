@@ -167,3 +167,7 @@ export async function POST(req: NextRequest) {
     )
   }
 }
+
+// Runtime configuration for Vercel
+export const runtime = 'nodejs'
+export const maxDuration = 60 // 60 seconds timeout

@@ -26,6 +26,9 @@ export interface BrowserSession {
   url: string;
   title: string;
   screenshot?: string; // base64
+  status?: string;
+  createdAt?: Date;
+  embeddedMode?: boolean;
 }
 
 export interface PageContent {

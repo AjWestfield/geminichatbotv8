@@ -16,17 +16,65 @@ import {
 export class BrowserAutomationClient {
   private baseUrl: string;
   private sessions: Map<string, BrowserSession> = new Map();
-  private eventStreams: Map<string, EventSource> = new Map();
+  private websockets: Map<string, WebSocket> = new Map();
+  private wsUrl: string;
 
-  constructor(baseUrl: string = '/api/browser') {
+  constructor(baseUrl: string = '/api/browser/session') {
     this.baseUrl = baseUrl;
+    // Use environment variable or default WebSocket URL
+    this.wsUrl = typeof window !== 'undefined' 
+      ? (window as any).__NEXT_PUBLIC_BROWSER_WS_URL || process.env.NEXT_PUBLIC_BROWSER_WS_URL || 'ws://localhost:8001'
+      : 'ws://localhost:8001';
   }
 
-  async createSession(options: BrowserOptions = {}): Promise<BrowserSession> {
-    const response = await fetch(`${this.baseUrl}?action=create`, {
+  async createSession(options: BrowserOptions & { query?: string; enableStreaming?: boolean; llm?: string; embeddedMode?: boolean } = {}): Promise<BrowserSession> {
+    // Extract browser session API specific options
+    const { query, enableStreaming, llm, embeddedMode, ...browserOptions } = options;
+    
+    // If query is provided, use the new browser session API format
+    if (query !== undefined) {
+      const response = await fetch(this.baseUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          query,
+          enableStreaming: enableStreaming !== false,
+          llm: llm || 'claude-sonnet-4-20250514',
+          embeddedMode: embeddedMode || false
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Failed to start browser session: ${error}`);
+      }
+
+      const data = await response.json();
+      const session: BrowserSession = {
+        id: data.sessionId,
+        status: 'active',
+        createdAt: new Date(),
+        url: '',
+        title: 'New Session',
+        screenshot: null,
+        embeddedMode: data.embeddedMode
+      };
+      
+      this.sessions.set(session.id, session);
+      
+      // Only start WebSocket connection if not in embedded mode
+      if (!data.embeddedMode) {
+        this.startWebSocketConnection(session.id);
+      }
+      
+      return session;
+    }
+    
+    // Otherwise use the original format
+    const response = await fetch(this.baseUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ options })
+      body: JSON.stringify({ action: 'create', options: browserOptions })
     });
 
     if (!response.ok) {
@@ -34,20 +82,44 @@ export class BrowserAutomationClient {
       throw new Error(error.error || 'Failed to create session');
     }
 
-    const { session } = await response.json();
+    const data = await response.json();
+    if (!data.success || !data.session) {
+      throw new Error('Invalid response from server');
+    }
+    
+    const session = data.session;
     this.sessions.set(session.id, session);
     
-    // Start event stream for real-time updates
-    this.startEventStream(session.id);
+    // Start WebSocket connection for real-time updates
+    this.startWebSocketConnection(session.id);
     
     return session;
   }
 
   async navigateTo(sessionId: string, url: string): Promise<PageContent> {
-    const response = await fetch(`${this.baseUrl}?action=navigate`, {
+    // Check if session is in embedded mode
+    const session = this.sessions.get(sessionId);
+    if (session?.embeddedMode) {
+      // Return mock data for embedded mode
+      const pageContent: PageContent = {
+        url: url,
+        title: 'Embedded Browser',
+        html: '',
+        text: '',
+        screenshot: null
+      };
+      
+      // Update local session
+      session.url = url;
+      session.title = pageContent.title;
+      
+      return pageContent;
+    }
+    
+    const response = await fetch(this.baseUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, url })
+      body: JSON.stringify({ action: 'navigate', sessionId, url })
     });
 
     if (!response.ok) {
@@ -55,12 +127,16 @@ export class BrowserAutomationClient {
       throw new Error(error.error || 'Failed to navigate');
     }
 
-    const { pageContent } = await response.json();
+    const data = await response.json();
+    if (!data.success || !data.content) {
+      throw new Error('Invalid response from server');
+    }
+    
+    const pageContent = data.content;
     
     // Update local session
-    const session = this.sessions.get(sessionId);
     if (session) {
-      session.url = pageContent.url;
+      session.url = pageContent.url || url;
       session.title = pageContent.title;
       session.screenshot = pageContent.screenshot;
     }
@@ -69,10 +145,10 @@ export class BrowserAutomationClient {
   }
 
   async extractContent(sessionId: string, selector: string): Promise<ExtractedData> {
-    const response = await fetch(`${this.baseUrl}?action=extract`, {
+    const response = await fetch(this.baseUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, selector })
+      body: JSON.stringify({ action: 'extract', sessionId, selector })
     });
 
     if (!response.ok) {
@@ -80,15 +156,19 @@ export class BrowserAutomationClient {
       throw new Error(error.error || 'Failed to extract content');
     }
 
-    const { data } = await response.json();
-    return data;
+    const result = await response.json();
+    if (!result.success || !result.data) {
+      throw new Error('Invalid response from server');
+    }
+    
+    return result.data;
   }
 
   async performAction(sessionId: string, action: WebAction, params?: any): Promise<ActionResult> {
-    const response = await fetch(`${this.baseUrl}?action=perform`, {
+    const response = await fetch(this.baseUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, action, params })
+      body: JSON.stringify({ action, sessionId, ...params })
     });
 
     if (!response.ok) {
@@ -96,24 +176,33 @@ export class BrowserAutomationClient {
       return { success: false, error: error.error || 'Action failed' };
     }
 
-    const { result } = await response.json();
+    const data = await response.json();
     
-    // Update screenshot if available
-    if (result.screenshot) {
-      const session = this.sessions.get(sessionId);
-      if (session) {
-        session.screenshot = result.screenshot;
+    // Handle success response
+    if (data.success) {
+      const result: ActionResult = { success: true };
+      
+      // Update screenshot if available
+      if (data.screenshot) {
+        const session = this.sessions.get(sessionId);
+        if (session) {
+          session.screenshot = data.screenshot;
+        }
+        result.screenshot = data.screenshot;
       }
+      
+      return result;
     }
     
-    return result;
+    // Handle error response
+    return { success: false, error: data.error || 'Action failed' };
   }
 
   async takeScreenshot(sessionId: string, fullPage = false): Promise<string> {
-    const response = await fetch(`${this.baseUrl}?action=screenshot`, {
+    const response = await fetch(this.baseUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, fullPage })
+      body: JSON.stringify({ action: 'screenshot', sessionId, fullPage })
     });
 
     if (!response.ok) {
@@ -121,7 +210,12 @@ export class BrowserAutomationClient {
       throw new Error(error.error || 'Failed to take screenshot');
     }
 
-    const { screenshot } = await response.json();
+    const data = await response.json();
+    if (!data.success || !data.screenshot) {
+      throw new Error('Invalid response from server');
+    }
+    
+    const screenshot = data.screenshot;
     
     // Update local session
     const session = this.sessions.get(sessionId);
@@ -133,10 +227,10 @@ export class BrowserAutomationClient {
   }
 
   async evaluateScript(sessionId: string, script: string): Promise<any> {
-    const response = await fetch(`${this.baseUrl}?action=evaluate`, {
+    const response = await fetch(this.baseUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, script })
+      body: JSON.stringify({ action: 'evaluate', sessionId, script })
     });
 
     if (!response.ok) {
@@ -144,26 +238,35 @@ export class BrowserAutomationClient {
       throw new Error(error.error || 'Failed to evaluate script');
     }
 
-    const { result } = await response.json();
-    return result;
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Script evaluation failed');
+    }
+    return data.result;
   }
 
   async closeSession(sessionId: string): Promise<void> {
-    // Close event stream
-    const eventSource = this.eventStreams.get(sessionId);
-    if (eventSource) {
-      eventSource.close();
-      this.eventStreams.delete(sessionId);
-    }
+    const session = this.sessions.get(sessionId);
+    
+    // Close WebSocket connection (if not embedded mode)
+    if (!session?.embeddedMode) {
+      const ws = this.websockets.get(sessionId);
+      if (ws) {
+        ws.close();
+        this.websockets.delete(sessionId);
+      }
 
-    // Close session on server
-    const response = await fetch(`${this.baseUrl}?sessionId=${sessionId}`, {
-      method: 'DELETE'
-    });
+      // Close session on server
+      const response = await fetch(this.baseUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'close', sessionId })
+      });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to close session');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to close session');
+      }
     }
 
     this.sessions.delete(sessionId);
@@ -177,26 +280,47 @@ export class BrowserAutomationClient {
     return Array.from(this.sessions.values());
   }
 
-  // Real-time event handling
-  private startEventStream(sessionId: string): void {
-    const eventSource = new EventSource(`${this.baseUrl}/stream?sessionId=${sessionId}`);
-    
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        this.handleBrowserEvent(sessionId, data);
-      } catch (error) {
-        console.error('Failed to parse browser event:', error);
-      }
-    };
+  // Real-time WebSocket handling
+  private startWebSocketConnection(sessionId: string): void {
+    try {
+      const ws = new WebSocket(this.wsUrl);
+      
+      ws.onopen = () => {
+        console.log(`WebSocket connected for session ${sessionId}`);
+        // Subscribe to session updates
+        ws.send(JSON.stringify({
+          type: 'subscribe',
+          sessionId: sessionId
+        }));
+      };
+      
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          // Only handle events for this session
+          if (data.sessionId === sessionId) {
+            this.handleBrowserEvent(sessionId, data);
+          }
+        } catch (error) {
+          console.error('Failed to parse WebSocket message:', error);
+        }
+      };
 
-    eventSource.onerror = (error) => {
-      console.error('Browser event stream error:', error);
-      eventSource.close();
-      this.eventStreams.delete(sessionId);
-    };
+      ws.onerror = () => {
+        // WebSocket onerror doesn't provide detailed error information
+        console.log(`WebSocket connection failed for session ${sessionId}`);
+      };
+      
+      ws.onclose = () => {
+        console.log(`WebSocket disconnected for session ${sessionId}`);
+        this.websockets.delete(sessionId);
+        // Could implement reconnection logic here if needed
+      };
 
-    this.eventStreams.set(sessionId, eventSource);
+      this.websockets.set(sessionId, ws);
+    } catch (error) {
+      console.error('Failed to create WebSocket connection:', error);
+    }
   }
 
   private handleBrowserEvent(sessionId: string, event: any): void {
@@ -289,11 +413,11 @@ export class BrowserAutomationClient {
 
   // Cleanup
   async cleanup(): Promise<void> {
-    // Close all event streams
-    for (const eventSource of this.eventStreams.values()) {
-      eventSource.close();
+    // Close all WebSocket connections
+    for (const ws of this.websockets.values()) {
+      ws.close();
     }
-    this.eventStreams.clear();
+    this.websockets.clear();
 
     // Close all sessions
     for (const sessionId of this.sessions.keys()) {

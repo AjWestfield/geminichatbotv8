@@ -32,56 +32,77 @@ class SettingsSync {
   get(key: string, defaultValue?: any): any {
     if (typeof window === 'undefined') return defaultValue;
     
-    // First try to get from individual key
-    let value = localStorage.getItem(key);
-    
-    // If not found, check if it's an image/video setting and look in unified storage
-    if (!value) {
-      if (key.startsWith('image')) {
-        const unified = localStorage.getItem('imageGenerationSettings');
-        if (unified) {
-          try {
-            const parsed = JSON.parse(unified);
-            const fieldMap: Record<string, string> = {
-              'imageGenerationModel': 'model',
-              'imageEditingModel': 'editingModel',
-              'imageStyle': 'style',
-              'imageSize': 'size',
-              'imageQuality': 'quality'
-            };
-            const field = fieldMap[key];
-            if (field && parsed[field]) {
-              value = parsed[field];
+    try {
+      // First try to get from individual key
+      let value = localStorage.getItem(key);
+      
+      // If not found, check if it's an image/video setting and look in unified storage
+      if (!value) {
+        if (key.startsWith('image')) {
+          const unified = localStorage.getItem('imageGenerationSettings');
+          if (unified) {
+            try {
+              // Validate JSON before parsing
+              if (!unified.trim().startsWith('{') || !unified.trim().endsWith('}')) {
+                console.warn(`[SettingsSync] Invalid JSON structure for imageGenerationSettings, clearing...`);
+                localStorage.removeItem('imageGenerationSettings');
+                return defaultValue;
+              }
+              
+              const parsed = JSON.parse(unified);
+              const fieldMap: Record<string, string> = {
+                'imageGenerationModel': 'model',
+                'imageEditingModel': 'editingModel',
+                'imageStyle': 'style',
+                'imageSize': 'size',
+                'imageQuality': 'quality'
+              };
+              const field = fieldMap[key];
+              if (field && parsed[field]) {
+                value = parsed[field];
+              }
+            } catch (e) {
+              console.error(`[SettingsSync] Failed to parse unified settings, clearing corrupted data:`, e);
+              localStorage.removeItem('imageGenerationSettings');
             }
-          } catch (e) {
-            console.error(`[SettingsSync] Failed to parse unified settings:`, e);
           }
-        }
-      } else if (key.startsWith('video')) {
-        const unified = localStorage.getItem('videoGenerationSettings');
-        if (unified) {
-          try {
-            const parsed = JSON.parse(unified);
-            const fieldMap: Record<string, string> = {
-              'videoModel': 'model',
-              'videoDuration': 'duration',
-              'videoAspectRatio': 'aspectRatio'
-            };
-            const field = fieldMap[key];
-            if (field && parsed[field]) {
-              value = parsed[field];
+        } else if (key.startsWith('video')) {
+          const unified = localStorage.getItem('videoGenerationSettings');
+          if (unified) {
+            try {
+              // Validate JSON before parsing
+              if (!unified.trim().startsWith('{') || !unified.trim().endsWith('}')) {
+                console.warn(`[SettingsSync] Invalid JSON structure for videoGenerationSettings, clearing...`);
+                localStorage.removeItem('videoGenerationSettings');
+                return defaultValue;
+              }
+              
+              const parsed = JSON.parse(unified);
+              const fieldMap: Record<string, string> = {
+                'videoModel': 'model',
+                'videoDuration': 'duration',
+                'videoAspectRatio': 'aspectRatio'
+              };
+              const field = fieldMap[key];
+              if (field && parsed[field]) {
+                value = parsed[field];
+              }
+            } catch (e) {
+              console.error(`[SettingsSync] Failed to parse unified settings, clearing corrupted data:`, e);
+              localStorage.removeItem('videoGenerationSettings');
             }
-          } catch (e) {
-            console.error(`[SettingsSync] Failed to parse unified settings:`, e);
           }
         }
       }
+      
+      // Log for debugging
+      console.log(`[SettingsSync] Getting ${key}:`, value || defaultValue);
+      
+      return value || defaultValue;
+    } catch (error) {
+      console.error(`[SettingsSync] Unexpected error in get() for key ${key}:`, error);
+      return defaultValue;
     }
-    
-    // Log for debugging
-    console.log(`[SettingsSync] Getting ${key}:`, value || defaultValue);
-    
-    return value || defaultValue;
   }
 
   /**
@@ -112,7 +133,21 @@ class SettingsSync {
         if (field) {
           try {
             const unified = localStorage.getItem('imageGenerationSettings');
-            const settings = unified ? JSON.parse(unified) : {};
+            let settings = {};
+            
+            if (unified) {
+              try {
+                // Validate JSON before parsing
+                if (unified.trim().startsWith('{') && unified.trim().endsWith('}')) {
+                  settings = JSON.parse(unified);
+                } else {
+                  console.warn(`[SettingsSync] Invalid JSON in imageGenerationSettings, resetting...`);
+                }
+              } catch (e) {
+                console.warn(`[SettingsSync] Failed to parse existing settings, creating new:`, e);
+              }
+            }
+            
             settings[field] = value;
             localStorage.setItem('imageGenerationSettings', JSON.stringify(settings));
             console.log(`[SettingsSync] Also updated unified imageGenerationSettings.${field}`);
@@ -130,7 +165,21 @@ class SettingsSync {
         if (field) {
           try {
             const unified = localStorage.getItem('videoGenerationSettings');
-            const settings = unified ? JSON.parse(unified) : {};
+            let settings = {};
+            
+            if (unified) {
+              try {
+                // Validate JSON before parsing
+                if (unified.trim().startsWith('{') && unified.trim().endsWith('}')) {
+                  settings = JSON.parse(unified);
+                } else {
+                  console.warn(`[SettingsSync] Invalid JSON in videoGenerationSettings, resetting...`);
+                }
+              } catch (e) {
+                console.warn(`[SettingsSync] Failed to parse existing settings, creating new:`, e);
+              }
+            }
+            
             settings[field] = value;
             localStorage.setItem('videoGenerationSettings', JSON.stringify(settings));
             console.log(`[SettingsSync] Also updated unified videoGenerationSettings.${field}`);
@@ -161,9 +210,36 @@ class SettingsSync {
    * Handle storage changes from other tabs/windows
    */
   private handleStorageChange(event: StorageEvent) {
-    if (event.key && event.newValue !== null) {
-      console.log(`[SettingsSync] External change detected for ${event.key}:`, event.newValue);
-      this.notifyListeners(event.key, event.newValue);
+    try {
+      if (event.key && event.newValue !== null) {
+        console.log(`[SettingsSync] External change detected for ${event.key}:`, event.newValue);
+        
+        // Validate all JSON-like values before notifying listeners
+        // Check if the value looks like it should be JSON (starts with { or [)
+        const trimmedValue = event.newValue.trim();
+        if (trimmedValue.startsWith('{') || trimmedValue.startsWith('[') || 
+            event.key === 'imageGenerationSettings' || 
+            event.key === 'videoGenerationSettings' ||
+            event.key === 'chatGenerationSettings' ||
+            event.key.endsWith('Settings') ||
+            event.key === 'chats' ||
+            event.key === 'messages') {
+          try {
+            // Try to parse to validate
+            JSON.parse(event.newValue);
+          } catch (e) {
+            console.error(`[SettingsSync] Invalid JSON in storage event for ${event.key}, clearing corrupted data:`, e);
+            // Clear the corrupted data
+            localStorage.removeItem(event.key);
+            // Don't propagate invalid data
+            return;
+          }
+        }
+        
+        this.notifyListeners(event.key, event.newValue);
+      }
+    } catch (error) {
+      console.error('[SettingsSync] Error handling storage change:', error);
     }
   }
 

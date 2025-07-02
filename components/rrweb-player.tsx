@@ -47,60 +47,37 @@ export function RRWebPlayer({
       setIsLoading(true);
       
       try {
-        // Dynamically import rrweb-player to avoid SSR issues
-        const { Replayer } = await import('rrweb-player');
+        // TEMPORARILY DISABLED: Dynamically import rrweb-player to avoid SSR issues
+        // This import was causing webpack chunk loading errors
+        console.warn('[RRWebPlayer] rrweb-player temporarily disabled due to chunk loading errors');
         
-        // Clear previous player
-        if (replayerRef.current) {
-          replayerRef.current.destroy?.();
+        // TODO: Re-enable after investigating rrweb-player compatibility
+        // const { Replayer } = await import('rrweb-player');
+        
+        // For now, just show a placeholder message
+        if (playerRef.current) {
+          playerRef.current.innerHTML = `
+            <div style="
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              height: 100%;
+              background: #f8f9fa;
+              color: #666;
+              font-family: system-ui, sans-serif;
+              text-align: center;
+              padding: 2rem;
+            ">
+              <div>
+                <div style="font-size: 48px; margin-bottom: 1rem;">🎬</div>
+                <div style="font-size: 18px; margin-bottom: 0.5rem;">Session Playback Temporarily Unavailable</div>
+                <div style="font-size: 14px; opacity: 0.7;">The rrweb-player is being updated to fix compatibility issues</div>
+              </div>
+            </div>
+          `;
         }
 
-        // Create new replayer instance
-        const replayer = new Replayer(events, {
-          target: playerRef.current,
-          props: {
-            width: playerRef.current.offsetWidth,
-            height: playerRef.current.offsetHeight,
-            autoPlay: isLive,
-            speedOption: [0.5, 1, 1.5, 2, 4],
-            showController: !isLive,
-            tags: {
-              'viewport': 'width=device-width, initial-scale=1'
-            }
-          }
-        });
-
-        replayerRef.current = replayer;
-
-        // Set up event listeners
-        replayer.on('start', () => {
-          setIsPlaying(true);
-          onPlaybackChange?.(true);
-        });
-
-        replayer.on('pause', () => {
-          setIsPlaying(false);
-          onPlaybackChange?.(false);
-        });
-
-        replayer.on('finish', () => {
-          setIsPlaying(false);
-          onPlaybackChange?.(false);
-        });
-
-        replayer.on('progress', (progress: any) => {
-          setCurrentTime(progress.timeOffset);
-          onPositionChange?.(progress.timeOffset);
-        });
-
-        // Calculate duration
-        if (events.length > 1) {
-          const lastEvent = events[events.length - 1];
-          const firstEvent = events[0];
-          setDuration(lastEvent.timestamp - firstEvent.timestamp);
-        }
-
-        console.log('[RRWebPlayer] Initialized with', events.length, 'events');
+        console.log('[RRWebPlayer] Placeholder shown for', events.length, 'events');
         
       } catch (error) {
         console.error('[RRWebPlayer] Failed to initialize:', error);

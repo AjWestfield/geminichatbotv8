@@ -23,9 +23,23 @@ export function getLocalStorageChats(): ChatSummary[] {
     const data = localStorage.getItem(CHATS_KEY)
     if (!data) return []
     
+    // Validate JSON structure before parsing
+    if (!data.trim().startsWith('{') || !data.trim().endsWith('}')) {
+      console.warn('[LocalStorage] Invalid JSON structure in chats data, clearing...')
+      localStorage.removeItem(CHATS_KEY)
+      return []
+    }
+    
     const parsed: LocalStorageData = JSON.parse(data)
     if (parsed.version !== STORAGE_VERSION) {
       // Handle version mismatch if needed
+      return []
+    }
+    
+    // Ensure chats is an array
+    if (!Array.isArray(parsed.chats)) {
+      console.warn('[LocalStorage] Chats data is not an array, resetting...')
+      localStorage.removeItem(CHATS_KEY)
       return []
     }
     
@@ -33,7 +47,8 @@ export function getLocalStorageChats(): ChatSummary[] {
       new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
     )
   } catch (error) {
-    console.error('Error reading chats from localStorage:', error)
+    console.error('[LocalStorage] Error reading chats from localStorage, clearing corrupted data:', error)
+    localStorage.removeItem(CHATS_KEY)
     return []
   }
 }
@@ -143,14 +158,29 @@ export function getLocalStorageMessages(chatId: string): Message[] {
     const data = localStorage.getItem(MESSAGES_KEY_PREFIX + chatId)
     if (!data) return []
     
+    // Validate JSON structure before parsing
+    if (!data.trim().startsWith('{') || !data.trim().endsWith('}')) {
+      console.warn('[LocalStorage] Invalid JSON structure in messages data, clearing...')
+      localStorage.removeItem(MESSAGES_KEY_PREFIX + chatId)
+      return []
+    }
+    
     const parsed: LocalStorageMessages = JSON.parse(data)
     if (parsed.version !== STORAGE_VERSION) {
       return []
     }
     
+    // Ensure messages is an array
+    if (!Array.isArray(parsed.messages)) {
+      console.warn('[LocalStorage] Messages data is not an array, resetting...')
+      localStorage.removeItem(MESSAGES_KEY_PREFIX + chatId)
+      return []
+    }
+    
     return parsed.messages
   } catch (error) {
-    console.error('Error reading messages from localStorage:', error)
+    console.error('[LocalStorage] Error reading messages from localStorage, clearing corrupted data:', error)
+    localStorage.removeItem(MESSAGES_KEY_PREFIX + chatId)
     return []
   }
 }

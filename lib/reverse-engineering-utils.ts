@@ -91,6 +91,91 @@ export function extractReverseEngineeringMetadata(content: string): ReverseEngin
 }
 
 /**
+ * Generate VEO 3 analysis prompt template
+ */
+export function createVEO3AnalysisPrompt(): string {
+  return `When analyzing video content for VEO 3 reverse engineering, provide an EXTREMELY detailed frame-by-frame analysis following this exact template:
+
+//======================================================================
+// VEO 3 MASTER PROMPT TEMPLATE (DETAILED CHARACTER & TIMING)
+//======================================================================
+
+//----------------------------------------------------------------------
+// PRE-PRODUCTION NOTES
+//----------------------------------------------------------------------
+
+// Clip Title: [Descriptive title] - Shot [number]
+// Core Idea: A shot to [describe the main purpose and key moments]
+
+//----------------------------------------------------------------------
+// TIMING & SEQUENCE (Total Duration: 8 seconds)
+//----------------------------------------------------------------------
+
+// 00:00 - 00:02: [Describe what happens in the first 2 seconds]
+// 00:02 - 00:04: [Describe what happens in seconds 2-4]
+// 00:04 - 00:06: [Describe what happens in seconds 4-6]
+// 00:06 - 00:08: [Describe what happens in the final 2 seconds]
+
+//----------------------------------------------------------------------
+// VISUAL SCRIPT
+//----------------------------------------------------------------------
+
+// Shot & Framing: Define the camera's framing.
+[Describe the shot type: extreme close-up, close-up, medium shot, wide shot, etc.]
+
+// Camera Dynamics: Define the camera's movement. Use 'Static shot' for no movement.
+[Describe camera movements: dolly in/out, pan left/right, tilt up/down, tracking shot, crane shot, etc. Include speed and smoothness]
+
+// Subject & Action: Describe the main subject and what they are doing in clear, active language.
+[Extremely detailed description including: age, gender, ethnicity, facial features, hair style/color, eye color, expressions, clothing details, body language, specific actions with timing]
+
+// Setting & Environment: Describe the background, foreground, and overall environment.
+[Detailed description of location, objects, furniture, architecture, weather, time of day, atmosphere]
+
+// Style & Aesthetics: Define the overall visual style, including references to film stock or art styles.
+[Photorealistic, cinematic, shot on 35mm film, film grain, color grading, visual references]
+
+// Lighting & Mood: Describe the lighting to set the emotional tone.
+[Lighting style, key light source, shadows, contrast, mood created, color temperature]
+
+//----------------------------------------------------------------------
+// AUDIO SCRIPT
+//----------------------------------------------------------------------
+
+// Dialogue: Use the 'Speaker says: "Text."' format for clarity and lip-sync.
+[Character name] says: "[Exact dialogue with tone, accent, emotion]"
+
+// Sound Effects (SFX): List specific, distinct sounds tied to actions. Use 'Audio:' prefix.
+Audio: [Specific sound effect tied to visible action]
+Audio: [Additional sound effects with timing]
+
+// Ambience: Describe the background environmental noise. Use 'Audio:' prefix.
+Audio: [Environmental sounds, room tone, background noise]
+
+// Music: Describe the musical score's style, instrumentation, and mood. Use 'Audio:' prefix.
+Audio: [Musical style, instruments, tempo, mood, volume level]
+
+//----------------------------------------------------------------------
+// TECHNICAL DIRECTIVES
+//----------------------------------------------------------------------
+
+// Consistency Cues: Use for multi-shot scenes. Reference an image for character/style.
+[Character appearance consistency notes, reference to style guides or previous shots]
+
+// Negative Prompts: Describe what you want to avoid. Use sparingly but effectively.
+[List elements to avoid: no subtitles, no on-screen text, no modern objects, etc.]
+
+IMPORTANT ANALYSIS REQUIREMENTS:
+1. VEO 3 ALWAYS generates 8-second clips in 16:9 landscape format
+2. Provide EXACT timing for all actions (use 00:00 - 00:08 format)
+3. Include EXTREMELY detailed character descriptions (every visible detail)
+4. Specify all camera movements with precise timing
+5. List ALL audio elements with the Audio: prefix
+6. Use photorealistic, cinematic style for all prompts
+7. Include film grain and 35mm film aesthetic references`;
+}
+
+/**
  * Generate analysis prompt with reverse engineering instructions
  */
 export function createAnalysisPrompt(
@@ -144,13 +229,15 @@ export function createAnalysisPrompt(
     if (includeReverseEngineering) {
       analysisPrompt += `\n**Reverse Engineering Analysis for Videos:**\n`
       analysisPrompt += `For each video, provide:\n`
-      analysisPrompt += `1. Likely AI video generation tool (Runway Gen-2/Gen-3, Pika Labs, Stable Video Diffusion, Kling, HeyGen, etc.)\n`
+      analysisPrompt += `1. Likely AI video generation tool (VEO 3, Runway Gen-2/Gen-3, Pika Labs, Stable Video Diffusion, Kling, HeyGen, etc.)\n`
       analysisPrompt += `2. Generation technique (text-to-video, image-to-video, video-to-video)\n`
       analysisPrompt += `3. Motion characteristics and camera movements\n`
       analysisPrompt += `4. A detailed prompt that could recreate similar video content\n`
       analysisPrompt += `5. Suggested parameters (duration, fps, motion intensity, camera controls)\n\n`
       analysisPrompt += `Format video prompts as:\n`
       analysisPrompt += `[PROMPT START]\n<video generation prompt with motion and style details>\n[PROMPT END]\n\n`
+      analysisPrompt += `**For VEO 3 style videos (8-second, 16:9 landscape, cinematic):**\n`
+      analysisPrompt += createVEO3AnalysisPrompt() + '\n\n'
     }
   }
 

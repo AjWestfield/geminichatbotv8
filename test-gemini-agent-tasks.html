@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Gemini Agent Tasks</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        button { padding: 10px 20px; margin: 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        #result { border: 1px solid #ccc; padding: 10px; margin: 10px 0; height: 400px; overflow-y: auto; background: #f9f9f9; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Test Gemini Agent Tasks Integration</h1>
+    
+    <p>This page tests whether Gemini can now create agent tasks using the new MCP integration.</p>
+    
+    <button onclick="testAgentTasks()">Test Agent Task Creation</button>
+    <button onclick="testMCPTodo()">Test MCP Todo API</button>
+    <button onclick="clearResults()">Clear Results</button>
+    
+    <div id="result"></div>
+
+    <script>
+        function log(message, type = 'info') {
+            const result = document.getElementById('result');
+            const className = type === 'success' ? 'success' : type === 'error' ? 'error' : '';
+            result.innerHTML += `<div class="${className}">[${new Date().toLocaleTimeString()}] ${message}</div>`;
+            result.scrollTop = result.scrollHeight;
+        }
+
+        function clearResults() {
+            document.getElementById('result').innerHTML = '';
+        }
+
+        async function testMCPTodo() {
+            log('Testing MCP Todo API...');
+            try {
+                const response = await fetch('/api/mcp/todo', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'read' })
+                });
+                
+                const data = await response.json();
+                log(`MCP Todo API Response: ${JSON.stringify(data, null, 2)}`, 'success');
+            } catch (error) {
+                log(`MCP Todo API Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testAgentTasks() {
+            log('Testing Agent Task Creation with Gemini...');
+            
+            const testPrompt = 'Add the sequential thinking MCP server to help with complex reasoning tasks';
+            
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: [
+                            { role: 'user', content: testPrompt }
+                        ],
+                        model: 'gemini-2.0-flash'
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                log('Gemini response received, processing stream...', 'success');
+                
+                const reader = response.body?.getReader();
+                if (!reader) {
+                    throw new Error('No reader available');
+                }
+
+                let fullResponse = '';
+                let foundAgentPlan = false;
+                let foundTodoWrite = false;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = new TextDecoder().decode(value);
+                    const lines = chunk.split('\\n');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('0:')) {
+                            try {
+                                const content = JSON.parse(line.substring(2));
+                                fullResponse += content;
+                                
+                                // Check for agent task indicators
+                                if (content.includes('[AGENT_PLAN]')) {
+                                    foundAgentPlan = true;
+                                    log('✅ Found [AGENT_PLAN] marker!', 'success');
+                                }
+                                if (content.includes('[TodoWrite') || content.includes('TodoWrite')) {
+                                    foundTodoWrite = true;
+                                    log('✅ Found TodoWrite operation!', 'success');
+                                }
+                                if (content.includes('[TOOL_CALL]')) {
+                                    log('✅ Found MCP tool call!', 'success');
+                                }
+                            } catch (e) {
+                                // Skip non-JSON lines
+                            }
+                        }
+                    }
+                }
+
+                log(`Full response length: ${fullResponse.length} characters`);
+                
+                // Final assessment
+                if (foundAgentPlan || foundTodoWrite) {
+                    log('🎉 SUCCESS: Gemini is now creating agent tasks!', 'success');
+                } else {
+                    log('❌ Agent tasks not detected in response', 'error');
+                }
+                
+                // Show partial response for debugging
+                log(`Response preview: ${fullResponse.substring(0, 500)}...`);
+                
+            } catch (error) {
+                log(`Test failed: ${error.message}`, 'error');
+            }
+        }
+    </script>
+</body>
+</html>

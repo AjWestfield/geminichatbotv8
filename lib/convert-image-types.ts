@@ -32,6 +32,7 @@ export function convertStoredImageToGenerated(dbImage: StoredImage): GeneratedIm
     
     // Multi-edit fields from metadata
     isMultiImageEdit: dbImage.metadata?.isMultiImageEdit,
+    isMultiImageComposition: dbImage.metadata?.isMultiImageComposition,
     sourceImages: dbImage.metadata?.sourceImages,
     inputImages: dbImage.metadata?.inputImages,
     

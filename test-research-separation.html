@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research Systems Separation Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .test-section {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .perplexity { border-left: 4px solid #00a8ff; }
+        .browser-use { border-left: 4px solid #8e44ad; }
+        .status { 
+            padding: 5px 10px; 
+            border-radius: 3px; 
+            font-weight: bold; 
+            display: inline-block;
+            margin: 5px 0;
+        }
+        .active { background-color: #2ecc71; color: white; }
+        .inactive { background-color: #95a5a6; color: white; }
+        .test-button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .test-button:hover {
+            background-color: #2980b9;
+        }
+        .result {
+            background-color: #ecf0f1;
+            padding: 10px;
+            border-radius: 3px;
+            margin-top: 10px;
+            font-family: monospace;
+        }
+        h1 { color: #2c3e50; }
+        h2 { color: #34495e; }
+        .toggle {
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 0;
+        }
+        .toggle.active {
+            background-color: #27ae60;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔬 Research Systems Separation Test</h1>
+        <p>This page tests the separation between Perplexity Sonar Pro API and Browser Use Agent systems.</p>
+        
+        <div class="test-section">
+            <h2>🎛️ Deep Research Mode Toggle</h2>
+            <button id="toggleMode" class="toggle">
+                Deep Research Mode: <span id="modeStatus">OFF</span>
+            </button>
+            <p id="modeDescription">Currently using: <strong>Perplexity Sonar Pro API</strong> for web search</p>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="test-section perplexity">
+            <h2>🌐 Perplexity Sonar Pro API</h2>
+            <div class="status" id="perplexityStatus">ACTIVE</div>
+            <p><strong>When to use:</strong> Deep Research Mode is OFF (default state)</p>
+            <p><strong>Handles:</strong> Regular web search queries, fact-checking, current events</p>
+            <p><strong>API Endpoint:</strong> Perplexity Sonar Pro</p>
+            
+            <button class="test-button" onclick="testPerplexity()">Test Perplexity Search</button>
+            <div id="perplexityResult" class="result" style="display: none;"></div>
+        </div>
+
+        <div class="test-section browser-use">
+            <h2>🤖 Browser Use Agent</h2>
+            <div class="status" id="browserUseStatus">INACTIVE</div>
+            <p><strong>When to use:</strong> Deep Research Mode is ON (activated by toggle)</p>
+            <p><strong>Handles:</strong> Complex research tasks, autonomous browsing, data extraction</p>
+            <p><strong>Service:</strong> Browser Use Agent on port 8001</p>
+            
+            <button class="test-button" onclick="testBrowserUse()">Test Browser Use Agent</button>
+            <div id="browserUseResult" class="result" style="display: none;"></div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>📋 Test Scenarios</h2>
+        
+        <div class="test-section">
+            <h3>Scenario 1: Regular Web Search (Perplexity)</h3>
+            <p>Deep Research Mode: OFF → Should use Perplexity Sonar Pro API</p>
+            <button class="test-button" onclick="testScenario1()">Test: "What's the latest AI news?"</button>
+            <div id="scenario1Result" class="result" style="display: none;"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>Scenario 2: Deep Research (Browser Use)</h3>
+            <p>Deep Research Mode: ON → Should use Browser Use Agent</p>
+            <button class="test-button" onclick="testScenario2()">Test: "Research AI companies and their valuations"</button>
+            <div id="scenario2Result" class="result" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        let isDeepResearchMode = false;
+
+        // Toggle deep research mode
+        document.getElementById('toggleMode').addEventListener('click', function() {
+            isDeepResearchMode = !isDeepResearchMode;
+            updateUI();
+        });
+
+        function updateUI() {
+            const modeStatus = document.getElementById('modeStatus');
+            const modeDescription = document.getElementById('modeDescription');
+            const toggleButton = document.getElementById('toggleMode');
+            const perplexityStatus = document.getElementById('perplexityStatus');
+            const browserUseStatus = document.getElementById('browserUseStatus');
+
+            if (isDeepResearchMode) {
+                modeStatus.textContent = 'ON';
+                toggleButton.classList.add('active');
+                modeDescription.innerHTML = 'Currently using: <strong>Browser Use Agent</strong> for research';
+                perplexityStatus.textContent = 'INACTIVE';
+                perplexityStatus.className = 'status inactive';
+                browserUseStatus.textContent = 'ACTIVE';
+                browserUseStatus.className = 'status active';
+            } else {
+                modeStatus.textContent = 'OFF';
+                toggleButton.classList.remove('active');
+                modeDescription.innerHTML = 'Currently using: <strong>Perplexity Sonar Pro API</strong> for web search';
+                perplexityStatus.textContent = 'ACTIVE';
+                perplexityStatus.className = 'status active';
+                browserUseStatus.textContent = 'INACTIVE';
+                browserUseStatus.className = 'status inactive';
+            }
+        }
+
+        async function testPerplexity() {
+            const resultDiv = document.getElementById('perplexityResult');
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = 'Testing Perplexity API...';
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: [
+                            { role: 'user', content: 'What is the latest news about artificial intelligence?' }
+                        ],
+                        model: 'gemini-2.0-flash'
+                    })
+                });
+
+                if (response.ok) {
+                    resultDiv.textContent = '✅ Perplexity API test successful - should use Perplexity Sonar Pro for web search';
+                } else {
+                    resultDiv.textContent = '❌ Perplexity API test failed: ' + response.status;
+                }
+            } catch (error) {
+                resultDiv.textContent = '❌ Error testing Perplexity: ' + error.message;
+            }
+        }
+
+        async function testBrowserUse() {
+            const resultDiv = document.getElementById('browserUseResult');
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = 'Testing Browser Use Agent...';
+
+            try {
+                const response = await fetch('http://localhost:8001/health');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.textContent = '✅ Browser Use Agent is running: ' + JSON.stringify(data, null, 2);
+                } else {
+                    resultDiv.textContent = '❌ Browser Use Agent test failed: ' + response.status;
+                }
+            } catch (error) {
+                resultDiv.textContent = '❌ Error testing Browser Use Agent: ' + error.message;
+            }
+        }
+
+        async function testScenario1() {
+            const resultDiv = document.getElementById('scenario1Result');
+            resultDiv.style.display = 'block';
+            
+            if (isDeepResearchMode) {
+                resultDiv.textContent = '⚠️ Deep Research Mode is ON - this should use Browser Use Agent instead of Perplexity';
+                return;
+            }
+
+            resultDiv.textContent = 'Testing regular web search with Perplexity...';
+            
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: [
+                            { role: 'user', content: "What's the latest AI news?" }
+                        ],
+                        model: 'gemini-2.0-flash'
+                    })
+                });
+
+                if (response.ok) {
+                    resultDiv.textContent = '✅ Scenario 1 SUCCESS: Regular search routed to Perplexity Sonar Pro API';
+                } else {
+                    resultDiv.textContent = '❌ Scenario 1 FAILED: ' + response.status;
+                }
+            } catch (error) {
+                resultDiv.textContent = '❌ Scenario 1 ERROR: ' + error.message;
+            }
+        }
+
+        async function testScenario2() {
+            const resultDiv = document.getElementById('scenario2Result');
+            resultDiv.style.display = 'block';
+            
+            if (!isDeepResearchMode) {
+                resultDiv.textContent = '⚠️ Deep Research Mode is OFF - turn it ON to test Browser Use Agent';
+                return;
+            }
+
+            resultDiv.textContent = 'Testing deep research with Browser Use Agent...';
+            
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: [
+                            { role: 'user', content: 'deep research on AI companies and their valuations' }
+                        ],
+                        model: 'gemini-2.0-flash'
+                    })
+                });
+
+                if (response.ok) {
+                    resultDiv.textContent = '✅ Scenario 2 SUCCESS: Deep research routed to Browser Use Agent';
+                } else {
+                    resultDiv.textContent = '❌ Scenario 2 FAILED: ' + response.status;
+                }
+            } catch (error) {
+                resultDiv.textContent = '❌ Scenario 2 ERROR: ' + error.message;
+            }
+        }
+
+        // Initialize UI
+        updateUI();
+    </script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  vnc-browser:
+    build:
+      context: ./browser-agent
+      dockerfile: Dockerfile.vnc
+    ports:
+      - "5900:5900"   # VNC port
+      - "6080:6080"   # noVNC web port
+      - "8003:8003"   # API port
+    environment:
+      - DISPLAY=:99
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    volumes:
+      - ./browser-agent:/app
+      - /dev/shm:/dev/shm  # Shared memory for Chrome
+    privileged: true  # Required for some browser operations
+    networks:
+      - browser-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/api/vnc-browser/sessions"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  browser-net:
+    driver: bridge

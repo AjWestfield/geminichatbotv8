@@ -21,6 +21,7 @@ export interface TTSGenerationResult {
     duration?: number
     voiceId?: string
     provider?: string
+    predictionId?: string
   }
   error?: string
 }
@@ -185,11 +186,6 @@ export async function generateWaveSpeedTTS(text: string, options: {
       throw new Error('WAVESPEED_API_KEY not configured')
     }
 
-    // For testing purposes, return a mock response if in development mode
-    if (process.env.NODE_ENV === 'development' && process.env.TTS_MOCK_MODE === 'true') {
-      console.log('[WaveSpeed TTS] Using mock mode for development')
-      return generateMockTTSResponse(text, options)
-    }
 
     const formattedText = convertToWaveSpeedFormat(text, options.multiSpeaker)
 
@@ -199,7 +195,8 @@ export async function generateWaveSpeedTTS(text: string, options: {
       textLength: formattedText.length
     })
 
-    const response = await fetch('https://api.wavespeed.ai/api/v3/wavespeed-ai/dia-tts', {
+    // Step 1: Create the prediction
+    const createResponse = await fetch('https://api.wavespeed.ai/api/v3/wavespeed-ai/dia-tts', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -210,30 +207,100 @@ export async function generateWaveSpeedTTS(text: string, options: {
       })
     })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`WaveSpeed API error: ${response.status} - ${errorText}`)
+    if (!createResponse.ok) {
+      const errorText = await createResponse.text()
+      throw new Error(`WaveSpeed API error: ${createResponse.status} - ${errorText}`)
     }
 
-    const result = await response.json()
+    const createResult = await createResponse.json()
 
-    console.log('[WaveSpeed TTS] API Response:', {
-      hasError: !!result.error,
-      keys: Object.keys(result),
-      resultPreview: JSON.stringify(result).substring(0, 200) + '...'
+    console.log('[WaveSpeed TTS] Prediction created:', {
+      success: createResult.code === 200,
+      predictionId: createResult.data?.id,
+      status: createResult.data?.status
     })
 
-    if (result.error) {
-      throw new Error(`WaveSpeed API error: ${result.error}`)
+    if (createResult.code !== 200 || !createResult.data?.id) {
+      throw new Error(`Failed to create prediction: ${createResult.message || 'Unknown error'}`)
     }
 
-    // WaveSpeed returns audio as base64 or URL - check various possible field names
-    const audioBase64 = result.audio_base64 || result.audio || result.output || result.data || result.result
+    const predictionId = createResult.data.id
+    const resultUrl = createResult.data.urls?.get
 
-    if (!audioBase64) {
-      console.error('[WaveSpeed TTS] No audio data found in response:', result)
-      throw new Error(`No audio data received from WaveSpeed API. Response keys: ${Object.keys(result).join(', ')}`)
+    if (!resultUrl) {
+      throw new Error('No result URL provided by WaveSpeed API')
     }
+
+    // Step 2: Poll for the result
+    let attempts = 0
+    const maxAttempts = 30 // 30 seconds timeout
+    let audioResult = null
+
+    while (attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 1000)) // Wait 1 second
+      attempts++
+
+      try {
+        const resultResponse = await fetch(resultUrl, {
+          headers: {
+            'Authorization': `Bearer ${apiKey}`
+          }
+        })
+
+        if (!resultResponse.ok) {
+          console.warn(`[WaveSpeed TTS] Result polling attempt ${attempts} failed:`, resultResponse.status)
+          continue
+        }
+
+        const result = await resultResponse.json()
+        
+        console.log('[WaveSpeed TTS] Polling result:', {
+          attempt: attempts,
+          status: result.data?.status,
+          hasOutputs: !!result.data?.outputs?.length
+        })
+
+        if ((result.data?.status === 'completed' || result.data?.status === 'succeeded') && result.data?.outputs?.length > 0) {
+          audioResult = result.data
+          break
+        } else if (result.data?.status === 'failed') {
+          throw new Error(`WaveSpeed generation failed: ${result.data.error || 'Unknown error'}`)
+        }
+        // Continue polling if status is 'created' or 'processing'
+      } catch (error) {
+        console.warn(`[WaveSpeed TTS] Polling attempt ${attempts} error:`, error)
+        if (attempts >= maxAttempts) {
+          throw error
+        }
+      }
+    }
+
+    if (!audioResult) {
+      throw new Error(`WaveSpeed generation timed out after ${maxAttempts} seconds`)
+    }
+
+    // Step 3: Get the audio data
+    const audioUrl = audioResult.outputs[0]
+    if (!audioUrl) {
+      throw new Error('No audio URL in WaveSpeed response')
+    }
+
+    console.log('[WaveSpeed TTS] Downloading audio from:', audioUrl)
+
+    // Download the audio file
+    const audioResponse = await fetch(audioUrl)
+    if (!audioResponse.ok) {
+      throw new Error(`Failed to download audio: ${audioResponse.status}`)
+    }
+
+    // Convert to base64
+    const audioBuffer = await audioResponse.arrayBuffer()
+    const audioBase64 = Buffer.from(audioBuffer).toString('base64')
+
+    console.log('[WaveSpeed TTS] Audio downloaded and converted to base64:', {
+      sizeKB: Math.round(audioBuffer.byteLength / 1024),
+      base64Length: audioBase64.length
+    })
 
     const speakerCount = options.multiSpeaker ? parseMultiSpeakerText(formattedText).length : 1
 
@@ -246,7 +313,8 @@ export async function generateWaveSpeedTTS(text: string, options: {
         speakers: speakerCount,
         duration: Math.ceil(formattedText.length / 10), // Rough estimate
         voiceId: options.multiSpeaker ? 'dia-multi' : 'dia-single',
-        provider: 'wavespeed'
+        provider: 'wavespeed',
+        predictionId
       }
     }
   } catch (error) {
@@ -257,3 +325,4 @@ export async function generateWaveSpeedTTS(text: string, options: {
     }
   }
 }
+

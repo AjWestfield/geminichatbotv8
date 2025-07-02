@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Zapier MCP Connection</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        button:disabled {
+            background: #6b7280;
+            cursor: not-allowed;
+        }
+        pre {
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .error {
+            color: #ef4444;
+        }
+        .success {
+            color: #10b981;
+        }
+        .tool-item {
+            background: #3a3a3a;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            background: #1a1a1a;
+            color: white;
+            border: 1px solid #4a4a4a;
+            border-radius: 4px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .status.connected {
+            background: #065f46;
+            color: #10b981;
+        }
+        .status.error {
+            background: #7f1d1d;
+            color: #ef4444;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Zapier MCP Connection</h1>
+    
+    <div class="container">
+        <h2>1. Test Connection & Discovery</h2>
+        <button id="testConnection">Test Connection & List Tools</button>
+        <div id="connectionStatus"></div>
+        <pre id="connectionResult"></pre>
+    </div>
+
+    <div class="container">
+        <h2>2. Execute Tool</h2>
+        <div>
+            <label>Tool Name:</label>
+            <input type="text" id="toolName" placeholder="e.g., list_available_actions" value="list_available_actions">
+        </div>
+        <div>
+            <label>Parameters (JSON):</label>
+            <textarea id="toolParams" rows="4" placeholder='{"key": "value"}'>{}</textarea>
+        </div>
+        <button id="executeTool">Execute Tool</button>
+        <pre id="toolResult"></pre>
+    </div>
+
+    <div class="container">
+        <h2>3. Test Social Media Publishing</h2>
+        <div>
+            <label>Platform:</label>
+            <select id="platform">
+                <option value="instagram">Instagram</option>
+                <option value="youtube">YouTube</option>
+                <option value="facebook">Facebook</option>
+                <option value="tiktok">TikTok</option>
+                <option value="x">X (Twitter)</option>
+                <option value="linkedin">LinkedIn</option>
+            </select>
+        </div>
+        <div>
+            <label>Test Action:</label>
+            <select id="testAction">
+                <option value="check_auth">Check Authentication</option>
+                <option value="test_publish">Test Publish (dry run)</option>
+            </select>
+        </div>
+        <button id="testPlatform">Test Platform</button>
+        <pre id="platformResult"></pre>
+    </div>
+
+    <script>
+        // Test connection
+        document.getElementById('testConnection').addEventListener('click', async () => {
+            const button = document.getElementById('testConnection');
+            const status = document.getElementById('connectionStatus');
+            const result = document.getElementById('connectionResult');
+            
+            button.disabled = true;
+            status.innerHTML = '<div class="status">Connecting to Zapier MCP...</div>';
+            result.textContent = '';
+            
+            try {
+                const response = await fetch('/api/content-library/test-zapier');
+                const data = await response.json();
+                
+                if (data.success && data.results.connection === 'Connected successfully' || data.results.connection === 'Already connected') {
+                    status.innerHTML = '<div class="status connected">✓ Connected to Zapier MCP</div>';
+                    
+                    // Display tools
+                    if (data.results.tools && data.results.tools.length > 0) {
+                        let toolsHtml = '<h3>Available Tools:</h3>';
+                        data.results.tools.forEach(tool => {
+                            toolsHtml += `<div class="tool-item">
+                                <strong>${tool.name}</strong>
+                                ${tool.description ? `<br><small>${tool.description}</small>` : ''}
+                            </div>`;
+                        });
+                        status.innerHTML += toolsHtml;
+                    }
+                } else {
+                    status.innerHTML = '<div class="status error">✗ Failed to connect</div>';
+                }
+                
+                result.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                status.innerHTML = '<div class="status error">✗ Error: ' + error.message + '</div>';
+                result.textContent = error.toString();
+            } finally {
+                button.disabled = false;
+            }
+        });
+
+        // Execute tool
+        document.getElementById('executeTool').addEventListener('click', async () => {
+            const button = document.getElementById('executeTool');
+            const result = document.getElementById('toolResult');
+            const toolName = document.getElementById('toolName').value;
+            const toolParams = document.getElementById('toolParams').value;
+            
+            button.disabled = true;
+            result.textContent = 'Executing tool...';
+            
+            try {
+                let params = {};
+                if (toolParams.trim()) {
+                    params = JSON.parse(toolParams);
+                }
+                
+                const response = await fetch('/api/content-library/test-zapier', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ toolName, params })
+                });
+                
+                const data = await response.json();
+                result.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                result.textContent = 'Error: ' + error.toString();
+            } finally {
+                button.disabled = false;
+            }
+        });
+
+        // Test platform
+        document.getElementById('testPlatform').addEventListener('click', async () => {
+            const button = document.getElementById('testPlatform');
+            const result = document.getElementById('platformResult');
+            const platform = document.getElementById('platform').value;
+            const action = document.getElementById('testAction').value;
+            
+            button.disabled = true;
+            result.textContent = 'Testing platform...';
+            
+            try {
+                let toolName, params;
+                
+                if (action === 'check_auth') {
+                    toolName = 'check_auth_status';
+                    params = { platform };
+                } else {
+                    // Test publish with dummy data
+                    toolName = `publish_to_${platform}`;
+                    params = {
+                        test_mode: true,
+                        content_url: 'https://example.com/test-image.jpg',
+                        caption: 'Test post from Zapier MCP integration'
+                    };
+                }
+                
+                const response = await fetch('/api/content-library/test-zapier', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ toolName, params })
+                });
+                
+                const data = await response.json();
+                result.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                result.textContent = 'Error: ' + error.toString();
+            } finally {
+                button.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

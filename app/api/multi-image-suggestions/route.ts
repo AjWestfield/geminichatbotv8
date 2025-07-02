@@ -11,6 +11,15 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
 export async function POST(req: NextRequest) {
   console.log('[Multi-Image Suggestions API] Request received')
 
+  // Check if Gemini API key is configured
+  if (!process.env.GEMINI_API_KEY) {
+    console.error('[Multi-Image Suggestions API] GEMINI_API_KEY not configured')
+    return NextResponse.json(
+      { error: 'API key configuration error' },
+      { status: 401 }
+    )
+  }
+
   try {
     const requestBody: MultiImageSuggestionsRequest = await req.json()
     const { images } = requestBody
@@ -79,22 +88,33 @@ Analyze the images and provide your 3 suggestions that include EVERY person:`
       console.log(`[Multi-Image Suggestions API] Processing image ${i + 1}`)
 
       if (imageUrl.startsWith('data:')) {
-        // Data URL - extract base64 data
-        const matches = imageUrl.match(/^data:(.+);base64,(.+)$/)
-        if (matches) {
-          contentParts.push({
-            inlineData: {
-              mimeType: matches[1],
-              data: matches[2]
-            }
-          })
-        } else {
+        // Data URL - extract base64 data using string manipulation to avoid regex backtracking
+        const base64Index = imageUrl.indexOf(';base64,')
+        if (base64Index === -1) {
           console.error(`[Multi-Image Suggestions API] Invalid data URL format for image ${i + 1}`)
           return NextResponse.json(
             { error: `Invalid data URL format for image ${i + 1}` },
             { status: 400 }
           )
         }
+        
+        const mimeType = imageUrl.substring(5, base64Index) // Skip 'data:' prefix
+        const base64Data = imageUrl.substring(base64Index + 8) // Skip ';base64,'
+        
+        if (!mimeType || !base64Data) {
+          console.error(`[Multi-Image Suggestions API] Invalid data URL format for image ${i + 1}`)
+          return NextResponse.json(
+            { error: `Invalid data URL format for image ${i + 1}` },
+            { status: 400 }
+          )
+        }
+        
+        contentParts.push({
+          inlineData: {
+            mimeType: mimeType,
+            data: base64Data
+          }
+        })
       } else if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
         // External URL - fetch and convert to base64
         try {
@@ -214,3 +234,7 @@ Analyze the images and provide your 3 suggestions that include EVERY person:`
     )
   }
 }
+
+// Runtime configuration for Vercel
+export const runtime = 'nodejs'
+export const maxDuration = 60 // 60 seconds timeout

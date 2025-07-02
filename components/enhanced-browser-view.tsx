@@ -73,8 +73,8 @@ interface MousePosition {
   y: number;
 }
 
-export function EnhancedBrowserView({ 
-  sessionId: propSessionId, 
+export function EnhancedBrowserView({
+  sessionId: propSessionId,
   onSessionChange,
   className = '',
   agentMode: propAgentMode = false,
@@ -113,7 +113,7 @@ export function EnhancedBrowserView({
   const [mousePosition, setMousePosition] = useState<MousePosition>({ x: 0, y: 0 });
   const [showMouseTrail, setShowMouseTrail] = useState(true);
   const [frameRate, setFrameRate] = useState(5);
-  
+
   // Refs
   const screenshotRef = useRef<HTMLImageElement>(null);
   const frameIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -180,7 +180,7 @@ export function EnhancedBrowserView({
     if (frameIntervalRef.current) {
       clearInterval(frameIntervalRef.current);
     }
-    
+
     const interval = 1000 / frameRate;
     frameIntervalRef.current = setInterval(() => {
       if (sessionId && (mode === 'agent' || isLoading)) {
@@ -203,10 +203,10 @@ export function EnhancedBrowserView({
       /auth/i,
       /secure/i
     ];
-    
+
     const isSensitive = sensitivePatterns.some(pattern => pattern.test(url));
     setIsOnSensitivePage(isSensitive);
-    
+
     if (isSensitive && mode === 'agent' && !isPaused) {
       setIsPaused(true);
       addAgentAction({
@@ -237,7 +237,7 @@ export function EnhancedBrowserView({
 
     try {
       let result: any;
-      
+
       switch (action.type) {
         case 'navigate':
           if (action.value) {
@@ -245,7 +245,7 @@ export function EnhancedBrowserView({
             result = { url: action.value };
           }
           break;
-          
+
         case 'click':
           if (action.target) {
             await click(action.target);
@@ -253,15 +253,15 @@ export function EnhancedBrowserView({
             result = { clicked: action.target };
           }
           break;
-          
+
         case 'type':
           if (action.target && action.value) {
             // Check if this is a sensitive field
             const sensitiveFields = ['password', 'credit', 'cvv', 'ssn', 'pin'];
-            const isSensitiveField = sensitiveFields.some(field => 
+            const isSensitiveField = sensitiveFields.some(field =>
               action.target?.toLowerCase().includes(field)
             );
-            
+
             if (isSensitiveField && onCredentialRequest) {
               // Request credentials from user
               setIsPaused(true);
@@ -271,7 +271,7 @@ export function EnhancedBrowserView({
                 message: `The agent needs to enter sensitive information in field: ${action.target}`
               });
               setIsPaused(false);
-              
+
               if (credentials[action.target]) {
                 await type(action.target, credentials[action.target]);
                 result = { typed: '[REDACTED]' };
@@ -282,13 +282,13 @@ export function EnhancedBrowserView({
             }
           }
           break;
-          
+
         case 'scroll':
           const scrollY = parseInt(action.value || '300');
           await scroll(0, scrollY);
           result = { scrolled: scrollY };
           break;
-          
+
         case 'extract':
           if (action.target) {
             result = await executeScript(`
@@ -297,18 +297,18 @@ export function EnhancedBrowserView({
             `);
           }
           break;
-          
+
         case 'screenshot':
           await takeScreenshot();
           result = { screenshot: true };
           break;
-          
+
         case 'wait':
           await new Promise(resolve => setTimeout(resolve, parseInt(action.value || '1000')));
           result = { waited: action.value || '1000ms' };
           break;
       }
-      
+
       updateActionStatus(actionId, 'completed', result);
     } catch (error) {
       updateActionStatus(actionId, 'failed', null, error instanceof Error ? error.message : 'Unknown error');
@@ -319,14 +319,14 @@ export function EnhancedBrowserView({
   };
 
   const updateActionStatus = (
-    actionId: string, 
-    status: AgentAction['status'], 
-    result?: any, 
+    actionId: string,
+    status: AgentAction['status'],
+    result?: any,
     error?: string
   ) => {
-    setAgentActions(prev => prev.map(action => 
-      action.id === actionId 
-        ? { ...action, status, result, error } 
+    setAgentActions(prev => prev.map(action =>
+      action.id === actionId
+        ? { ...action, status, result, error }
         : action
     ));
   };
@@ -336,28 +336,28 @@ export function EnhancedBrowserView({
     const steps = 30;
     const duration = 800;
     let step = 0;
-    
+
     // Random target position (would be enhanced with actual element detection)
     const targetX = Math.random() * 800 + 100;
     const targetY = Math.random() * 600 + 100;
-    
+
     const startX = mousePosition.x;
     const startY = mousePosition.y;
-    
+
     const interval = setInterval(() => {
       step++;
       const progress = step / steps;
-      
+
       // Cubic bezier easing
       const eased = progress < 0.5
         ? 4 * progress * progress * progress
         : 1 - Math.pow(-2 * progress + 2, 3) / 2;
-      
+
       setMousePosition({
         x: startX + (targetX - startX) * eased,
         y: startY + (targetY - startY) * eased
       });
-      
+
       if (step >= steps) {
         clearInterval(interval);
       }
@@ -368,7 +368,7 @@ export function EnhancedBrowserView({
     const newMode = mode === 'agent' ? 'manual' : 'agent';
     setMode(newMode);
     onModeChange?.(newMode);
-    
+
     if (newMode === 'agent') {
       startFrameUpdates();
     }
@@ -420,21 +420,21 @@ export function EnhancedBrowserView({
         {/* Mode Indicator and Controls */}
         <div className="px-3 pt-3 pb-2 flex items-center justify-between border-b">
           <div className="flex items-center gap-3">
-            <Badge 
+            <Badge
               variant={mode === 'agent' ? 'default' : 'secondary'}
               className="flex items-center gap-1.5"
             >
               {mode === 'agent' ? <Bot className="h-3 w-3" /> : <User className="h-3 w-3" />}
               {mode === 'agent' ? 'Agent Mode' : 'Manual Mode'}
             </Badge>
-            
+
             {isOnSensitivePage && (
               <Badge variant="destructive" className="flex items-center gap-1">
                 <Lock className="h-3 w-3" />
                 Sensitive Page
               </Badge>
             )}
-            
+
             {mode === 'agent' && (
               <div className="flex items-center gap-2">
                 <Button
@@ -446,7 +446,7 @@ export function EnhancedBrowserView({
                   {isPaused ? <Play className="h-3 w-3 mr-1" /> : <Pause className="h-3 w-3 mr-1" />}
                   {isPaused ? 'Resume' : 'Pause'}
                 </Button>
-                
+
                 {currentActionId && (
                   <Button
                     size="sm"
@@ -461,7 +461,7 @@ export function EnhancedBrowserView({
               </div>
             )}
           </div>
-          
+
           <div className="flex items-center gap-2">
             <Button
               size="sm"
@@ -475,7 +475,7 @@ export function EnhancedBrowserView({
                 <><Bot className="h-3 w-3 mr-1" /> Switch to Agent</>
               )}
             </Button>
-            
+
             {isOnSensitivePage && (
               <Button
                 size="sm"
@@ -486,7 +486,7 @@ export function EnhancedBrowserView({
                 {showSensitiveContent ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
               </Button>
             )}
-            
+
             <Button
               size="sm"
               variant="ghost"
@@ -498,7 +498,7 @@ export function EnhancedBrowserView({
             </Button>
           </div>
         </div>
-        
+
         {/* Browser Controls */}
         <div className="p-3 border-b flex items-center gap-2">
           <Button
@@ -510,7 +510,7 @@ export function EnhancedBrowserView({
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          
+
           <Button
             variant="ghost"
             size="icon"
@@ -520,7 +520,7 @@ export function EnhancedBrowserView({
           >
             <ArrowRight className="h-4 w-4" />
           </Button>
-          
+
           <Button
             variant="ghost"
             size="icon"
@@ -530,7 +530,7 @@ export function EnhancedBrowserView({
           >
             <RefreshCw className="h-4 w-4" />
           </Button>
-          
+
           <form onSubmit={handleNavigate} className="flex-1 flex items-center gap-2">
             <Input
               value={inputUrl}
@@ -565,30 +565,44 @@ export function EnhancedBrowserView({
               </div>
             </div>
           )}
-          
+
           {!error && !sessionId && (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
-                <MousePointer className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-500 mb-4">Browser not initialized</p>
-                <Button onClick={() => createSession()}>
+                <div className="relative mb-6">
+                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full blur-xl opacity-20 animate-pulse" />
+                  <div className="relative bg-gradient-to-r from-blue-500 to-purple-600 p-4 rounded-full">
+                    <MousePointer className="h-12 w-12 text-white" />
+                  </div>
+                </div>
+                <h3 className="text-xl font-semibold mb-2">Live Browser View</h3>
+                <p className="text-gray-500 mb-4">Experience real-time browser control with AI assistance</p>
+                <Button
+                  onClick={() => createSession()}
+                  className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+                >
                   Start Browser Session
                 </Button>
+                <div className="mt-6 text-sm text-gray-400">
+                  <p>✨ AI-powered web navigation</p>
+                  <p>🔍 Real-time research capabilities</p>
+                  <p>🎯 Interactive browser control</p>
+                </div>
               </div>
             </div>
           )}
-          
+
           {!error && sessionId && (
             <div className="relative h-full">
               {/* Screenshot with effects */}
               <div className="relative h-full">
                 {screenshot ? (
                   <>
-                    <motion.img 
+                    <motion.img
                       key={screenshot}
                       ref={screenshotRef}
-                      src={screenshot} 
-                      alt="Browser view" 
+                      src={screenshot}
+                      alt="Browser view"
                       className={cn(
                         "w-full h-full object-contain transition-all duration-200",
                         isOnSensitivePage && !showSensitiveContent ? 'blur-xl' : ''
@@ -597,7 +611,7 @@ export function EnhancedBrowserView({
                       animate={{ opacity: 1 }}
                       transition={{ duration: 0.1 }}
                     />
-                    
+
                     {/* Sensitive content overlay */}
                     {isOnSensitivePage && !showSensitiveContent && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/20">
@@ -614,7 +628,7 @@ export function EnhancedBrowserView({
                         </div>
                       </div>
                     )}
-                    
+
                     {/* Agent mouse cursor */}
                     {mode === 'agent' && showMouseTrail && (
                       <motion.div
@@ -648,7 +662,7 @@ export function EnhancedBrowserView({
             </div>
           )}
         </div>
-        
+
         {/* Agent Action Queue */}
         {mode === 'agent' && agentActions.length > 0 && (
           <div className="border-t p-3 max-h-48 overflow-y-auto">
@@ -666,7 +680,7 @@ export function EnhancedBrowserView({
                 Clear All
               </Button>
             </div>
-            
+
             <div className="space-y-2">
               {agentActions.map(action => (
                 <motion.div
@@ -699,25 +713,25 @@ export function EnhancedBrowserView({
                         {action.status === 'pending' && <Clock className="h-3 w-3 text-gray-400" />}
                       </motion.div>
                     </AnimatePresence>
-                    
+
                     <span className="font-medium">{action.type}</span>
                     <span className="text-gray-600 dark:text-gray-400 truncate flex-1">
                       {action.description}
                     </span>
-                    
+
                     {action.confidence !== undefined && (
                       <Badge variant="outline" className="text-xs">
                         {action.confidence}%
                       </Badge>
                     )}
-                    
+
                     {action.error && (
                       <span className="text-xs text-red-500" title={action.error}>
                         <Info className="h-3 w-3" />
                       </span>
                     )}
                   </div>
-                  
+
                   {action.requiresApproval && action.status === 'pending' && (
                     <div className="flex items-center gap-1">
                       <Button

@@ -22,6 +22,7 @@ import { useMCPState } from '@/hooks/use-mcp-state'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
+import { useYouTubeSettings } from '@/lib/contexts/settings-context'
 
 interface SettingsDialogProps {
   open: boolean
@@ -106,6 +107,15 @@ export function SettingsDialog({
   const [stagedVideoBackend, setStagedVideoBackend] = useState(videoBackend)
   const [stagedVideoTier, setStagedVideoTier] = useState(videoTier)
   const [stagedAutoDetectAspectRatio, setStagedAutoDetectAspectRatio] = useState(autoDetectAspectRatio)
+  
+  // YouTube settings
+  const { settings: youtubeSettings, updateSettings: updateYouTubeSettings } = useYouTubeSettings()
+  const [stagedYoutubeEnabled, setStagedYoutubeEnabled] = useState(youtubeSettings.enabled)
+  const [stagedYoutubeAutoDetectUrls, setStagedYoutubeAutoDetectUrls] = useState(youtubeSettings.autoDetectUrls)
+  const [stagedYoutubeAutoDownload, setStagedYoutubeAutoDownload] = useState(youtubeSettings.autoDownload)
+  const [stagedYoutubeDefaultQuality, setStagedYoutubeDefaultQuality] = useState(youtubeSettings.defaultQuality)
+  const [stagedYoutubeShowQualitySelector, setStagedYoutubeShowQualitySelector] = useState(youtubeSettings.showQualitySelector)
+  
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [showDiscardDialog, setShowDiscardDialog] = useState(false)
@@ -124,9 +134,15 @@ export function SettingsDialog({
       setStagedVideoBackend(videoBackend)
       setStagedVideoTier(videoTier)
       setStagedAutoDetectAspectRatio(autoDetectAspectRatio)
+      // Reset YouTube settings
+      setStagedYoutubeEnabled(youtubeSettings.enabled)
+      setStagedYoutubeAutoDetectUrls(youtubeSettings.autoDetectUrls)
+      setStagedYoutubeAutoDownload(youtubeSettings.autoDownload)
+      setStagedYoutubeDefaultQuality(youtubeSettings.defaultQuality)
+      setStagedYoutubeShowQualitySelector(youtubeSettings.showQualitySelector)
       setHasUnsavedChanges(false)
     }
-  }, [open, imageGenerationModel, imageEditingModel, imageStyle, imageSize, imageQuality, videoModel, videoDuration, videoAspectRatio, videoBackend, videoTier, autoDetectAspectRatio])
+  }, [open, imageGenerationModel, imageEditingModel, imageStyle, imageSize, imageQuality, videoModel, videoDuration, videoAspectRatio, videoBackend, videoTier, autoDetectAspectRatio, youtubeSettings])
   
   // Check for unsaved changes
   useEffect(() => {
@@ -141,10 +157,15 @@ export function SettingsDialog({
       stagedVideoAspectRatio !== videoAspectRatio ||
       stagedVideoBackend !== videoBackend ||
       stagedVideoTier !== videoTier ||
-      stagedAutoDetectAspectRatio !== autoDetectAspectRatio
+      stagedAutoDetectAspectRatio !== autoDetectAspectRatio ||
+      stagedYoutubeEnabled !== youtubeSettings.enabled ||
+      stagedYoutubeAutoDetectUrls !== youtubeSettings.autoDetectUrls ||
+      stagedYoutubeAutoDownload !== youtubeSettings.autoDownload ||
+      stagedYoutubeDefaultQuality !== youtubeSettings.defaultQuality ||
+      stagedYoutubeShowQualitySelector !== youtubeSettings.showQualitySelector
       
     setHasUnsavedChanges(hasChanges)
-  }, [stagedImageGenerationModel, stagedImageEditingModel, stagedImageStyle, stagedImageSize, stagedImageQuality, stagedVideoModel, stagedVideoDuration, stagedVideoAspectRatio, stagedVideoBackend, stagedVideoTier, stagedAutoDetectAspectRatio, imageGenerationModel, imageEditingModel, imageStyle, imageSize, imageQuality, videoModel, videoDuration, videoAspectRatio, videoBackend, videoTier, autoDetectAspectRatio])
+  }, [stagedImageGenerationModel, stagedImageEditingModel, stagedImageStyle, stagedImageSize, stagedImageQuality, stagedVideoModel, stagedVideoDuration, stagedVideoAspectRatio, stagedVideoBackend, stagedVideoTier, stagedAutoDetectAspectRatio, stagedYoutubeEnabled, stagedYoutubeAutoDetectUrls, stagedYoutubeAutoDownload, stagedYoutubeDefaultQuality, stagedYoutubeShowQualitySelector, imageGenerationModel, imageEditingModel, imageStyle, imageSize, imageQuality, videoModel, videoDuration, videoAspectRatio, videoBackend, videoTier, autoDetectAspectRatio, youtubeSettings])
 
   const {
     servers,
@@ -759,6 +780,102 @@ export function SettingsDialog({
                 </RadioGroup>
               </div>
 
+              {/* YouTube Download Settings */}
+              <div className="space-y-4 pt-4 border-t border-[#3A3A3A]">
+                <h3 className="text-sm font-medium mb-3">YouTube Download Settings</h3>
+                
+                {/* Enable YouTube Download */}
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="youtube-enabled" className="text-sm font-medium cursor-pointer">
+                      Enable YouTube Download
+                    </Label>
+                    <p className="text-xs text-gray-400">
+                      Allow downloading YouTube videos when URLs are detected
+                    </p>
+                  </div>
+                  <Switch
+                    id="youtube-enabled"
+                    checked={stagedYoutubeEnabled}
+                    onCheckedChange={setStagedYoutubeEnabled}
+                  />
+                </div>
+
+                {/* Auto-detect URLs */}
+                {stagedYoutubeEnabled && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="youtube-auto-detect" className="text-sm font-medium cursor-pointer">
+                          Auto-detect YouTube URLs
+                        </Label>
+                        <p className="text-xs text-gray-400">
+                          Automatically detect YouTube URLs when pasted or typed
+                        </p>
+                      </div>
+                      <Switch
+                        id="youtube-auto-detect"
+                        checked={stagedYoutubeAutoDetectUrls}
+                        onCheckedChange={setStagedYoutubeAutoDetectUrls}
+                      />
+                    </div>
+
+                    {/* Auto-download */}
+                    {stagedYoutubeAutoDetectUrls && (
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <Label htmlFor="youtube-auto-download" className="text-sm font-medium cursor-pointer">
+                            Auto-download on paste
+                          </Label>
+                          <p className="text-xs text-gray-400">
+                            Automatically start downloading when a YouTube URL is pasted
+                          </p>
+                        </div>
+                        <Switch
+                          id="youtube-auto-download"
+                          checked={stagedYoutubeAutoDownload}
+                          onCheckedChange={setStagedYoutubeAutoDownload}
+                        />
+                      </div>
+                    )}
+
+                    {/* Default Quality */}
+                    <div>
+                      <Label htmlFor="youtube-quality" className="text-sm font-medium mb-2 block">Default Quality</Label>
+                      <Select value={stagedYoutubeDefaultQuality} onValueChange={setStagedYoutubeDefaultQuality}>
+                        <SelectTrigger id="youtube-quality" className="bg-[#1E1E1E] border-[#3A3A3A]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#2B2B2B] border-[#3A3A3A]">
+                          <SelectItem value="auto">Auto (Best Available)</SelectItem>
+                          <SelectItem value="1080p">1080p (High)</SelectItem>
+                          <SelectItem value="720p">720p (Medium)</SelectItem>
+                          <SelectItem value="480p">480p (Low)</SelectItem>
+                          <SelectItem value="audio">Audio Only</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Show Quality Selector */}
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="youtube-show-quality" className="text-sm font-medium cursor-pointer">
+                          Show quality selector
+                        </Label>
+                        <p className="text-xs text-gray-400">
+                          Display quality options before downloading
+                        </p>
+                      </div>
+                      <Switch
+                        id="youtube-show-quality"
+                        checked={stagedYoutubeShowQualitySelector}
+                        onCheckedChange={setStagedYoutubeShowQualitySelector}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
               {/* Info Box */}
               <Alert className="bg-blue-500/10 border-blue-500/50">
                 <Info className="h-4 w-4" />
@@ -1164,6 +1281,15 @@ Supports all standard MCP configuration formats!`}
                   if (onVideoBackendChange) onVideoBackendChange(stagedVideoBackend)
                   if (onVideoTierChange) onVideoTierChange(stagedVideoTier)
                   if (onAutoDetectAspectRatioChange) onAutoDetectAspectRatioChange(stagedAutoDetectAspectRatio)
+                  
+                  // Apply YouTube settings
+                  updateYouTubeSettings({
+                    enabled: stagedYoutubeEnabled,
+                    autoDetectUrls: stagedYoutubeAutoDetectUrls,
+                    autoDownload: stagedYoutubeAutoDownload,
+                    defaultQuality: stagedYoutubeDefaultQuality,
+                    showQualitySelector: stagedYoutubeShowQualitySelector
+                  })
                   
                   // Force a small delay to ensure context updates
                   await new Promise(resolve => setTimeout(resolve, 100))

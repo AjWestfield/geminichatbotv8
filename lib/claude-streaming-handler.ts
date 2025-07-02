@@ -2,6 +2,12 @@ import Anthropic from '@anthropic-ai/sdk';
 import { MCPToolsContext } from '@/lib/mcp/mcp-tools-context';
 import { parseClaudeToolCalls } from './claude-client';
 import { VideoGenerationHandler } from '@/lib/video-generation-handler';
+import { 
+  processMCPToolResultForTaskSync, 
+  detectTodoManagerFromContent,
+  extractTodoDataFromExecutionResult,
+  logMCPTaskSync 
+} from '@/lib/mcp-task-sync-bridge';
 
 export async function handleClaudeStreaming(
   claudeClient: Anthropic,
@@ -112,6 +118,23 @@ export async function handleClaudeStreaming(
               // Ensure result is a string and properly escape it
               const resultString = typeof result === 'string' ? result : JSON.stringify(result);
               
+              // Check if this is a TodoManager operation and sync with UI
+              const mcpToolResult = {
+                server: toolCall.server,
+                tool: toolCall.tool,
+                arguments: toolCall.arguments,
+                result: result,
+                success: true
+              };
+              
+              const synced = processMCPToolResultForTaskSync(mcpToolResult);
+              if (synced) {
+                logMCPTaskSync('Tool result synced with Agent Task Display', {
+                  tool: toolCall.tool,
+                  server: toolCall.server
+                });
+              }
+              
               // Format the tool execution result to show in the UI
               // Note: We don't need to double-escape since JSON.stringify will handle it
               const formattedResult = `\n\n**Tool Execution: ${toolCall.server} - ${toolCall.tool}**\n${resultString}\n\n`;
@@ -132,7 +155,34 @@ export async function handleClaudeStreaming(
               // Send tool error
               const errorMessage = `\n\n❌ Tool execution error: ${error instanceof Error ? error.message : 'Unknown error'}\n\n`;
               controller.enqueue(encoder.encode(`0:${JSON.stringify(errorMessage)}\n`));
+              
+              // Also try to sync failed operations
+              const mcpToolResult = {
+                server: toolCall.server,
+                tool: toolCall.tool,
+                arguments: toolCall.arguments,
+                result: error instanceof Error ? error.message : 'Unknown error',
+                success: false
+              };
+              
+              processMCPToolResultForTaskSync(mcpToolResult);
             }
+          }
+        }
+        
+        // Also check the full content for TodoManager operations that might not be in tool calls
+        const todoDetection = detectTodoManagerFromContent(fullContent);
+        if (todoDetection.hasTodoOperations) {
+          logMCPTaskSync('Detected TodoManager operations in response content', todoDetection);
+          
+          // Try to extract and sync any todo data from the content
+          const todoOperations = extractTodoDataFromExecutionResult(fullContent);
+          if (todoOperations.length > 0) {
+            const { syncMCPOperationWithTaskStore } = await import('@/lib/mcp-task-sync-bridge');
+            todoOperations.forEach(op => {
+              syncMCPOperationWithTaskStore(op);
+            });
+            logMCPTaskSync('Synced todo operations from content', todoOperations);
           }
         }
 

@@ -144,6 +144,8 @@ export function ImageEditModal({ isOpen, onClose, image, onEditComplete, editing
     model: string,
     onComplete: (editedImage: GeneratedImage) => void
   ) => {
+    let progressInterval: NodeJS.Timeout | null = null
+    
     try {
       // Update to processing stage
       updateStage(editedImageId, 'processing')
@@ -194,17 +196,47 @@ export function ImageEditModal({ isOpen, onClose, image, onEditComplete, editing
       console.log('[ImageEditModal] Sending edit request for', originalImage.isUploaded ? 'uploaded' : 'generated', 'image')
       console.log('[ImageEditModal] Using model:', requestBody.model)
 
+      // Add frontend timeout to prevent hanging (backend can take up to 6 minutes)
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => {
+        console.log('[ImageEditModal] Frontend timeout reached, aborting request')
+        controller.abort()
+      }, 180000) // 3 minute frontend timeout
+
+      // Add progress updates during long edit operations
+      if (model === 'flux-kontext-max') {
+        // For Flux Kontext Max, provide more realistic progress updates
+        let currentProgress = 40
+        progressInterval = setInterval(() => {
+          if (currentProgress < 85) {
+            currentProgress += Math.random() * 10
+            updateStage(editedImageId, 'processing', `Processing complex edit with ${model}... (${Math.round(currentProgress)}%)`)
+          }
+        }, 15000) // Update every 15 seconds
+      }
+
       const response = await fetch("/api/edit-image", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(requestBody),
+        signal: controller.signal,
       })
+
+      // Clear timeout and progress interval if request completes successfully
+      clearTimeout(timeoutId)
+      if (progressInterval) {
+        clearInterval(progressInterval)
+      }
 
       const data = await response.json()
 
       if (!response.ok) {
+        // Check for network errors (503 status)
+        if (response.status === 503 && data.error === "Network connection error") {
+          throw new Error("Connection interrupted. Please try again.")
+        }
         throw new Error(data.details || data.error || "Failed to edit image")
       }
 
@@ -232,13 +264,36 @@ export function ImageEditModal({ isOpen, onClose, image, onEditComplete, editing
     } catch (error: any) {
       console.error("Edit error:", error)
       
+      // Clear progress interval on error
+      if (progressInterval) {
+        clearInterval(progressInterval)
+      }
+      
+      // Check if the request was aborted due to timeout
+      if (error.name === 'AbortError') {
+        failImageGeneration(
+          editedImageId,
+          "Image editing took too long and was cancelled. This can happen when the AI service is under heavy load. Please try again with a simpler edit request."
+        )
+        return
+      }
+      
       // Check if it's a Replicate URL expiration error
       const errorMessage = error instanceof Error ? error.message : "Failed to edit image"
       const isExpiredError = errorMessage.includes("expired") || 
                             errorMessage.includes("no longer available") ||
                             errorMessage.includes("404")
+      const isNetworkError = errorMessage.includes("Connection interrupted") ||
+                            errorMessage.includes("Connection error") ||
+                            errorMessage.includes("network")
       
-      if (isExpiredError) {
+      if (isNetworkError) {
+        // Set a more helpful error message for network errors
+        failImageGeneration(
+          editedImageId,
+          "Connection interrupted while editing. This can happen with large images or slow connections. Please try again."
+        )
+      } else if (isExpiredError) {
         // Set a more helpful error message for expired URLs
         failImageGeneration(
           editedImageId,

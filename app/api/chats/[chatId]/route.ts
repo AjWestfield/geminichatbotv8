@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getChat, updateChatTitle, deleteChat, updateCanvasState } from '@/lib/services/chat-persistence'
+import { getChat as getOptimizedChat, clearChatCache, preloadChat } from '@/lib/services/chat-persistence-optimized'
+import { updateChatTitle, deleteChat, updateCanvasState } from '@/lib/services/chat-persistence'
 import { isPersistenceConfigured } from '@/lib/database/supabase'
 import { getLocalStorageChats, getLocalStorageMessages, updateLocalStorageChatTitle, deleteLocalStorageChat } from '@/lib/localStorage-persistence'
 
@@ -9,16 +10,67 @@ export async function GET(
   { params }: { params: Promise<{ chatId: string }> }
 ) {
   try {
-    const { chatId } = await params
-    let chatData = await getChat(chatId)
+    // Await params properly (Next.js 15 pattern)
+    const resolvedParams = await params
+    const chatId = resolvedParams?.chatId
+    
+    console.log('[API] GET /api/chats/[chatId] - Loading chat:', chatId)
+    
+    if (!chatId || typeof chatId !== 'string' || chatId.trim() === '') {
+      console.error('[API] Invalid or missing chatId:', chatId)
+      return NextResponse.json(
+        { 
+          error: 'Invalid chat ID',
+          message: 'A valid chat ID is required',
+          details: 'Chat ID must be a non-empty string'
+        },
+        { status: 400 }
+      )
+    }
+    
+    // Clean the chatId
+    const cleanChatId = chatId.trim()
+    
+    let chatData = null
+    
+    try {
+      chatData = await getOptimizedChat(cleanChatId)
+    } catch (dbError: any) {
+      console.error('[API] Database error when fetching chat:', dbError)
+      
+      // Check if it's a timeout error - if so, return specific error instead of trying fallback
+      if (dbError.code === '57014' || dbError.message?.includes('timeout') || dbError.message?.includes('Database timeout')) {
+        console.error('[API] Database timeout error - returning specific error response')
+        return NextResponse.json(
+          { 
+            error: 'Database timeout',
+            message: 'The chat is taking too long to load due to database performance issues',
+            details: 'Please ask your administrator to run database optimization: npm run db:optimize-performance',
+            chatId: cleanChatId,
+            isTimeout: true
+          },
+          { status: 504 } // Gateway Timeout
+        )
+      }
+      
+      // For other errors, continue to try localStorage fallback
+    }
+    
+    console.log('[API] getChat result:', {
+      hasData: !!chatData,
+      hasChat: !!chatData?.chat,
+      messageCount: chatData?.messages?.length || 0,
+      isPersistenceConfigured: isPersistenceConfigured()
+    })
 
-    if (!chatData && !isPersistenceConfigured()) {
-      // Try localStorage fallback
+    // Try localStorage fallback if no database data (regardless of persistence configuration)
+    if (!chatData) {
+      console.log('[API] No database data, trying localStorage fallback')
       const chats = getLocalStorageChats()
-      const chat = chats.find(c => c.id === chatId)
+      const chat = chats.find(c => c.id === cleanChatId)
       
       if (chat) {
-        const messages = getLocalStorageMessages(chatId)
+        const messages = getLocalStorageMessages(cleanChatId)
         // For localStorage, we don't have images/videos/canvas state stored separately
         chatData = {
           chat,
@@ -27,21 +79,53 @@ export async function GET(
           videos: [],
           canvasState: null
         }
+        console.log('[API] Found chat in localStorage:', chat.title)
       }
     }
 
-    if (!chatData) {
+    if (!chatData || !chatData.chat) {
+      console.error('[API] Chat not found:', cleanChatId, {
+        persistenceConfigured: isPersistenceConfigured(),
+        chatDataReceived: !!chatData,
+        hasChatProperty: !!chatData?.chat
+      })
       return NextResponse.json(
-        { error: 'Chat not found' },
+        { 
+          error: 'Chat not found',
+          message: `The requested chat with ID ${cleanChatId} was not found`,
+          chatId: cleanChatId,
+          details: 'The chat may have been deleted or does not exist'
+        },
         { status: 404 }
       )
     }
 
+    console.log('[API] Returning chat data:', {
+      chatId: chatData.chat.id,
+      title: chatData.chat.title,
+      messageCount: chatData.messages.length,
+      imageCount: chatData.images?.length || 0,
+      videoCount: chatData.videos?.length || 0
+    })
+
     return NextResponse.json(chatData)
   } catch (error) {
     console.error('Error in GET /api/chats/[chatId]:', error)
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      chatId: cleanChatId,
+      persistenceConfigured: isPersistenceConfigured()
+    })
+    
+    // Always return a properly structured error response
     return NextResponse.json(
-      { error: 'Failed to fetch chat' },
+      { 
+        error: 'Failed to fetch chat',
+        message: 'An internal error occurred while fetching the chat',
+        details: error instanceof Error ? error.message : 'Unknown error',
+        chatId: cleanChatId
+      },
       { status: 500 }
     )
   }

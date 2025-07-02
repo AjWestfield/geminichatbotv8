@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Download Test - Manual</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #fff;
+        }
+        .container {
+            background: #2b2b2b;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #fff;
+            margin-bottom: 30px;
+        }
+        .step {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #4a4a4a;
+            border-radius: 5px;
+            background: #333;
+        }
+        .step h3 {
+            margin-top: 0;
+            color: #4CAF50;
+        }
+        code {
+            background: #1e1e1e;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            color: #00ff00;
+        }
+        .success {
+            color: #4CAF50;
+        }
+        .warning {
+            color: #ff9800;
+        }
+        .error {
+            color: #f44336;
+        }
+        ul {
+            margin: 10px 0;
+        }
+        li {
+            margin: 5px 0;
+        }
+        .url-box {
+            background: #1e1e1e;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-family: monospace;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 YouTube Auto-Download Test Guide</h1>
+        
+        <div class="step">
+            <h3>✅ Implementation Status</h3>
+            <p>Based on my analysis, the YouTube auto-download feature is <span class="success">FULLY IMPLEMENTED</span> with the following components:</p>
+            <ul>
+                <li class="success">✅ YouTube URL detection utilities</li>
+                <li class="success">✅ Auto-download on paste functionality</li>
+                <li class="success">✅ YouTube download API endpoint</li>
+                <li class="success">✅ Settings integration</li>
+                <li class="success">✅ File upload integration</li>
+                <li class="success">✅ Syntax error fixed</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <h3>📋 Step 1: Verify App is Running</h3>
+            <p>Open your Gemini Chatbot app:</p>
+            <div class="url-box">http://localhost:3000</div>
+            <p>The app should be running and accessible.</p>
+        </div>
+
+        <div class="step">
+            <h3>⚙️ Step 2: Check Settings</h3>
+            <ol>
+                <li>Click the Settings button in the app</li>
+                <li>Navigate to the <strong>Video</strong> tab</li>
+                <li>Scroll down to <strong>YouTube Download Settings</strong></li>
+                <li>Verify these are enabled:
+                    <ul>
+                        <li>Enable YouTube Download: <span class="success">ON</span></li>
+                        <li>Auto-detect YouTube URLs: <span class="success">ON</span></li>
+                        <li>Auto-download on paste: <span class="success">ON</span></li>
+                    </ul>
+                </li>
+            </ol>
+        </div>
+
+        <div class="step">
+            <h3>🧪 Step 3: Test Auto-Download</h3>
+            <p>Copy this YouTube URL:</p>
+            <div class="url-box">https://www.youtube.com/watch?v=jNQXAC9IVRw</div>
+            <p>(This is "Me at the zoo" - the first YouTube video, only 19 seconds long)</p>
+            <ol>
+                <li>Click in the chat input field</li>
+                <li>Paste the URL (Cmd+V or Ctrl+V)</li>
+                <li>You should see:
+                    <ul>
+                        <li>Download progress indicator appears</li>
+                        <li>Progress percentage updates</li>
+                        <li>Success message when complete</li>
+                        <li>Video file appears in the upload area</li>
+                    </ul>
+                </li>
+            </ol>
+        </div>
+
+        <div class="step">
+            <h3>🤖 Step 4: Send Video for Analysis</h3>
+            <ol>
+                <li>After the video downloads, type: <code>What's in this video?</code></li>
+                <li>Click Send or press Enter</li>
+                <li>The AI should analyze the video and describe what it sees</li>
+            </ol>
+        </div>
+
+        <div class="step">
+            <h3>⚠️ Troubleshooting</h3>
+            <p>If the download doesn't work:</p>
+            <ul>
+                <li class="warning">Check console for errors (F12 → Console)</li>
+                <li class="warning">Verify yt-dlp is installed: <code>which yt-dlp</code></li>
+                <li class="warning">Check if GEMINI_API_KEY is set in .env.local</li>
+                <li class="warning">Try a different YouTube URL</li>
+                <li class="warning">Check if the video is age-restricted or private</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <h3>✨ Expected Results</h3>
+            <p>When working correctly:</p>
+            <ul>
+                <li class="success">YouTube URL is detected immediately when pasted</li>
+                <li class="success">Download starts automatically without user action</li>
+                <li class="success">Progress shows as percentage (0% → 100%)</li>
+                <li class="success">Video file appears in the upload area</li>
+                <li class="success">Video can be sent with messages for AI analysis</li>
+                <li class="success">URL is cleared from input after download</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

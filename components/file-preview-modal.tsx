@@ -30,10 +30,11 @@ interface FilePreviewModalProps {
   onAnimate?: (imageUrl: string, imageName: string) => void
   onEdit?: (imageUrl: string, imageName: string) => void
   onAnalyze?: (fileName: string, contentType: string) => void
-  availableOptions?: ('analyze' | 'edit' | 'animate')[]
+  onReverseEngineer?: (fileName: string, contentType: string) => void
+  availableOptions?: ('analyze' | 'edit' | 'animate' | 'reverse-engineer')[]
 }
 
-export function FilePreviewModal({ isOpen, onClose, file, onAnimate, onEdit, onAnalyze, availableOptions = ['analyze'] }: FilePreviewModalProps) {
+export function FilePreviewModal({ isOpen, onClose, file, onAnimate, onEdit, onAnalyze, onReverseEngineer, availableOptions = ['analyze'] }: FilePreviewModalProps) {
   const isImage = file.contentType?.startsWith("image/")
   const isAudio = file.contentType?.startsWith("audio/")
   const isVideo = file.contentType?.startsWith("video/")
@@ -208,7 +209,7 @@ export function FilePreviewModal({ isOpen, onClose, file, onAnimate, onEdit, onA
           {isVideo && (
             <div className="space-y-3 sm:space-y-4 h-full flex flex-col">
               {/* Video Player Section */}
-              {file.url ? (
+              {(file.url || (file as any).videoUrl || (file as any).geminiFileUri) ? (
                 <div className="bg-black rounded-lg overflow-hidden flex-1 flex flex-col min-h-0">
                   <div className="flex-1 min-h-0">
                     <video
@@ -219,7 +220,7 @@ export function FilePreviewModal({ isOpen, onClose, file, onAnimate, onEdit, onA
                       onTimeUpdate={handleTimeUpdate}
                       poster={file.videoThumbnail}
                     >
-                      <source src={file.url} type={file.contentType} />
+                      <source src={file.url || (file as any).videoUrl || ''} type={file.contentType} />
                       Your browser does not support the video element.
                     </video>
                   </div>
@@ -247,6 +248,20 @@ export function FilePreviewModal({ isOpen, onClose, file, onAnimate, onEdit, onA
                             Analyze
                           </Button>
                         )}
+                        {availableOptions.includes('reverse-engineer') && onReverseEngineer && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-blue-600/50 hover:bg-blue-600/10 text-xs sm:text-sm"
+                            onClick={() => {
+                              onReverseEngineer(file.name, file.contentType)
+                              onClose()
+                            }}
+                          >
+                            <span className="text-sm sm:text-base mr-1 sm:mr-2">🔄</span>
+                            Reverse Engineer
+                          </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"
@@ -268,8 +283,27 @@ export function FilePreviewModal({ isOpen, onClose, file, onAnimate, onEdit, onA
               ) : (
                 <div className="bg-black/20 rounded-lg p-8 sm:p-12 text-center flex-1 flex flex-col items-center justify-center">
                   <Video className="w-12 h-12 sm:w-16 sm:h-16 text-gray-400 mb-3 sm:mb-4" />
-                  <p className="text-gray-400 text-sm sm:text-base">Video preview not available</p>
-                  <p className="text-xs sm:text-sm text-gray-500 mt-1">The video file URL is missing</p>
+                  <p className="text-gray-400 text-sm sm:text-base">Instagram Video Preview</p>
+                  <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                    {(file as any).videoUrl ? 'Loading video...' : 
+                     (file as any).geminiFileUri ? 'This video is hosted on Gemini AI' : 
+                     'The video file URL is missing'}
+                  </p>
+                  {file.videoThumbnail && (
+                    <div className="mt-4">
+                      <img 
+                        src={file.videoThumbnail} 
+                        alt="Video thumbnail"
+                        className="rounded-lg max-w-full h-auto"
+                        style={{ maxHeight: '200px' }}
+                      />
+                    </div>
+                  )}
+                  {file.videoDuration && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      Duration: {Math.floor(file.videoDuration / 60)}:{(file.videoDuration % 60).toString().padStart(2, '0')}
+                    </p>
+                  )}
                 </div>
               )}
               {/* Transcription Section */}

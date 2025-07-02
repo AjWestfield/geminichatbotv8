@@ -5,7 +5,7 @@ import { AppSidebar } from "@/components/app-sidebar"
 import ChatInterface from "@/components/chat-interface"
 import CanvasView from "@/components/canvas-view"
 import ResizablePanels from "@/components/resizable-panels"
-import { GeneratedImage, loadGeneratedImages, saveGeneratedImages } from "@/lib/image-utils"
+import { GeneratedImage, loadGeneratedImages, saveGeneratedImages, generateImageId } from "@/lib/image-utils"
 import { convertStoredImageToGenerated } from "@/lib/convert-image-types"
 import { SettingsDebugPanel } from "@/components/settings-debug-panel"
 import { GeneratedVideo } from "@/lib/video-generation-types"
@@ -143,18 +143,26 @@ export default function Home() {
 
         // Only include localStorage images that are NOT in the database
         // These are likely new images that haven't been saved yet
+        // Keep uploaded images from localStorage that aren't in the database
+        // This prevents losing uploaded images that failed to save to DB
+        const uploadedLocalImages = localImages.filter((localImg: GeneratedImage) =>
+          localImg.isUploaded && !dbImageIds.has(localImg.id)
+        )
+        
+        // Also keep other unsaved local images (generated but not yet persisted)
         const unsavedLocalImages = localImages.filter((localImg: GeneratedImage) =>
-          !dbImageIds.has(localImg.id)
+          !localImg.isUploaded && !dbImageIds.has(localImg.id)
         )
 
-        console.log('[PAGE] Unsaved local images:', unsavedLocalImages.length)
+        console.log('[PAGE] Keeping uploaded images from localStorage:', uploadedLocalImages.length)
+        console.log('[PAGE] Keeping unsaved generated images from localStorage:', unsavedLocalImages.length)
 
         // Combine database images with unsaved local images
-        finalImages = [...formattedDbImages, ...unsavedLocalImages]
+        finalImages = [...formattedDbImages, ...uploadedLocalImages, ...unsavedLocalImages]
 
         // Clean up localStorage - remove images that exist in database
         const imagesToKeep = localImages.filter((img: GeneratedImage) =>
-          !dbImageIds.has(img.id)
+          img.isUploaded || !dbImageIds.has(img.id)
         )
 
         if (imagesToKeep.length !== localImages.length) {
@@ -286,22 +294,36 @@ export default function Home() {
         })
 
         // Convert database messages to chat interface format and extract attachments
-        const formattedMessages = chatData.messages.map((msg: any) => ({
-          id: msg.id,
-          role: msg.role,
-          content: msg.content,
-          createdAt: new Date(msg.created_at),
-          // Ensure attachments are properly formatted
-          experimental_attachments: msg.attachments || [],
-          // Preserve any metadata in the message
-          metadata: msg.metadata || {}
-        }))
+        const formattedMessages = chatData.messages.map((msg: any, index: number) => {
+          // Only include attachments for the last 2 messages to avoid expired Gemini file issues
+          const isRecent = index >= chatData.messages.length - 2;
+          
+          const formattedMsg: any = {
+            id: msg.id,
+            role: msg.role,
+            content: msg.content,
+            createdAt: new Date(msg.created_at),
+            // Preserve any metadata in the message
+            metadata: msg.metadata || {}
+          };
+          
+          // Only include experimental_attachments for recent messages
+          // This prevents expired Gemini file URIs from being sent with new messages
+          if (isRecent && msg.attachments && msg.attachments.length > 0) {
+            formattedMsg.experimental_attachments = msg.attachments;
+            console.log('[PAGE] Including attachments for recent message:', msg.id, 'index:', index, 'of', chatData.messages.length);
+          } else if (msg.attachments && msg.attachments.length > 0) {
+            console.log('[PAGE] Excluding attachments for historical message to prevent expired Gemini URIs:', msg.id, 'index:', index);
+          }
+          
+          return formattedMsg;
+        })
 
         // Extract attachments from messages to reconstruct messageAttachments state
         const extractedAttachments: Record<string, any[]> = {}
         chatData.messages.forEach((msg: any) => {
           if (msg.attachments && msg.attachments.length > 0) {
-            // Process attachments to handle invalid blob URLs
+            // Process attachments to handle invalid blob URLs and expired Gemini files
             const processedAttachments = msg.attachments.map((attachment: any) => {
               // Check if the URL is a blob URL
               if (attachment.url && attachment.url.startsWith('blob:')) {
@@ -313,6 +335,19 @@ export default function Home() {
                   error: 'Blob URL expired - file needs to be re-uploaded'
                 }
               }
+              
+              // CRITICAL FIX: Remove Gemini file references from historical attachments
+              // These expire after 48 hours and cause "File is not in an ACTIVE state" errors
+              if (attachment.geminiFile) {
+                console.log('[PAGE] Removing expired Gemini file reference from attachment:', attachment.name)
+                const { geminiFile, ...attachmentWithoutGemini } = attachment
+                return {
+                  ...attachmentWithoutGemini,
+                  geminiFileRemoved: true,
+                  error: 'Gemini file reference expired - file needs to be re-uploaded'
+                }
+              }
+              
               return attachment
             })
             
@@ -705,194 +740,112 @@ export default function Home() {
         })
       }
     }
-  }, [saveImageToDB])
+  }, [activeCanvasTab, saveImageToDB, setActiveCanvasTab])
 
-  // Enhanced video generation callback that saves to DB
-  const handleGeneratedVideosChange = useCallback(async (videos: GeneratedVideo[]) => {
-    console.log('[PAGE] handleGeneratedVideosChange called with', videos.length, 'videos')
+  // Handle file uploads for images
+  const handleFileUpload = useCallback(async (files: File[]) => {
+    console.log('[PAGE] handleFileUpload called with', files.length, 'files')
     
-    // Deduplicate videos before setting state
-    const dedupedVideos = deduplicateVideos(videos)
-    setGeneratedVideos(dedupedVideos)
+    // Filter for image files only
+    const imageFiles = files.filter(file => file.type.startsWith('image/'))
     
-    // Only save to localStorage videos with valid URLs
-    saveVideosToLocalStorage(dedupedVideos)
-    
-    // Debug logging
-    if (dedupedVideos.length > 0) {
-      debugVideos(dedupedVideos)
-      logVideoValidation(dedupedVideos)
+    if (imageFiles.length === 0) {
+      console.log('[PAGE] No image files found in upload')
+      return
     }
 
-    // Save all new completed videos to database (not just the last one)
-    for (const video of videos) {
-      if (video && video.status === 'completed' && !video.url.startsWith('blob:')) {
-        // Check if we've already saved this video to prevent duplicates
-        if (savedVideoIdsRef.current.has(video.id)) {
-          continue
+    // Try to use current chat or create one, but don't fail if we can't
+    let chatIdToUse = currentChatId
+    if (!chatIdToUse && isPersistenceConfigured()) {
+      console.log('[PAGE] No current chat, attempting to create new one for uploaded images')
+      try {
+        const newChatId = await createNewChat()
+        if (newChatId) {
+          chatIdToUse = newChatId
+          console.log('[PAGE] Created new chat for uploads:', chatIdToUse)
         }
+      } catch (error) {
+        console.error('[PAGE] Failed to create new chat, will continue without chat ID:', error)
+        // Continue without a chat ID - images will still be saved to localStorage
+      }
+    }
 
-        console.log('[PAGE] Saving video to database:', {
-          id: video.id,
-          model: video.model,
-          status: video.status,
-          prompt: video.prompt,
-          duration: video.duration
+    const uploadedImages: GeneratedImage[] = []
+
+    for (const file of imageFiles) {
+      try {
+        // Convert file to base64
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onloadend = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(file)
         })
 
-        // Mark as saved before the async operation to prevent race conditions
-        savedVideoIdsRef.current.add(video.id)
-
-        const saved = await saveVideoToDB(video)
-        if (saved) {
-          console.log('[PAGE] Video saved successfully:', video.id)
-        } else {
-          console.log('[PAGE] Failed to save video:', video.id)
-          // Remove from saved set if save failed
-          savedVideoIdsRef.current.delete(video.id)
+        // Create a new image object
+        const newImage: GeneratedImage = {
+          id: generateImageId(),
+          url: base64,
+          prompt: file.name.replace(/\.[^/.]+$/, ''), // Use filename without extension as prompt
+          timestamp: new Date(),
+          quality: 'standard',
+          model: 'uploaded',
+          isUploaded: true,
+          metadata: {
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: file.type
+          }
         }
+
+        uploadedImages.push(newImage)
+        console.log('[PAGE] Created uploaded image:', newImage.id)
+      } catch (error) {
+        console.error('[PAGE] Failed to process uploaded file:', file.name, error)
       }
     }
-  }, [saveVideoToDB])
 
-  // Debounced auto tab switching with toast notification
-  const lastSwitchTimeRef = useRef<number>(0)
-  const switchToVideoTab = useCallback((reason: string) => {
-    const now = Date.now()
-
-    // Prevent multiple switches within 2 seconds
-    if (now - lastSwitchTimeRef.current < 2000) {
-      console.log(`[PAGE] Debouncing tab switch request: ${reason}`)
-      return
-    }
-
-    // Only switch if we're not already on video tab
-    if (activeCanvasTab === "video") {
-      console.log(`[PAGE] Already on video tab, skipping switch: ${reason}`)
-      return
-    }
-
-    lastSwitchTimeRef.current = now
-    console.log(`[PAGE] Switching to video tab: ${reason}`)
-    setActiveCanvasTab("video")
-
-    toast({
-      title: "Switched to Video tab",
-      description: reason,
-      duration: 3000
-    })
-  }, [toast, activeCanvasTab])
-
-  // Enhanced video completion handler with database persistence
-  const handleVideoComplete = useCallback(async (completedVideo: GeneratedVideo) => {
-    console.log('[PAGE] Video generation completed:', completedVideo.id, 'URL:', completedVideo.url)
-
-    // Validate that the video has a permanent URL
-    if (!hasValidPermanentUrl(completedVideo)) {
-      console.error('[PAGE] Completed video has invalid URL:', completedVideo.url)
-      toast({
-        title: "Video generation issue",
-        description: "The video was generated but the URL is invalid. Please try again.",
-        variant: "destructive",
-        duration: 7000
-      })
+    if (uploadedImages.length > 0) {
+      // Add to the current images
+      const updatedImages = [...generatedImages, ...uploadedImages]
+      setGeneratedImages(updatedImages)
       
-      // Mark as failed in the UI
-      setGeneratedVideos(prev => updateVideo(prev, completedVideo.id, { 
-        status: 'failed' as const, 
-        error: 'Invalid video URL received' 
-      }))
-      return
-    }
+      // Save to localStorage immediately - this works even without a chat
+      saveGeneratedImages(updatedImages)
+      console.log('[PAGE] Saved', uploadedImages.length, 'uploaded images to localStorage')
 
-    // Add completion timestamp
-    const completedVideoWithTimestamp = {
-      ...completedVideo,
-      status: 'completed' as const,
-      completedAt: new Date()
-    }
-
-    // Update the video in the list
-    setGeneratedVideos(prev => updateVideo(prev, completedVideo.id, completedVideoWithTimestamp))
-
-    // Remove from polling pairs
-    setVideoPollingPairs(prev => prev.filter(pair => pair.videoId !== completedVideo.id))
-
-    // Save completed video to database and local storage
-    if (!savedVideoIdsRef.current.has(completedVideo.id)) {
-      console.log('[PAGE] Saving completed video:', completedVideo.id)
-      savedVideoIdsRef.current.add(completedVideo.id)
-
-      // Save to database
-      const saved = await saveVideoToDB(completedVideoWithTimestamp)
-      if (saved) {
-        console.log('[PAGE] Video saved to database successfully:', completedVideo.id)
+      // Try to save to database if we have a chat ID and persistence is configured
+      if (isPersistenceConfigured() && chatIdToUse) {
+        for (const image of uploadedImages) {
+          try {
+            const saved = await saveImageToDB({
+              ...image,
+              chatId: chatIdToUse
+            })
+            if (saved) {
+              console.log('[PAGE] Uploaded image saved to database:', image.id)
+              savedImageIdsRef.current.add(image.id)
+            } else {
+              console.log('[PAGE] Failed to save uploaded image to database:', image.id)
+            }
+          } catch (error) {
+            console.error('[PAGE] Error saving image to database:', error)
+          }
+        }
       } else {
-        console.log('[PAGE] Failed to save video to database:', completedVideo.id)
+        console.log('[PAGE] No chat ID or persistence not configured - images saved to localStorage only')
       }
 
-      // Always save to local storage as backup
-      const storedVideo: StoredVideo = {
-        ...completedVideoWithTimestamp,
-        chatId: currentChatId || undefined
-      }
-      const localSaved = addVideoToLocalStorage(storedVideo)
-      if (localSaved) {
-        console.log('[PAGE] Video saved to local storage successfully:', completedVideo.id)
-      } else {
-        console.log('[PAGE] Failed to save video to local storage:', completedVideo.id)
-      }
-
-      // Only remove from saved set if both saves failed
-      if (!saved && !localSaved) {
-        savedVideoIdsRef.current.delete(completedVideo.id)
-      }
+      // Show success notification
+      toast({
+        title: "Images uploaded",
+        description: `Successfully uploaded ${uploadedImages.length} image${uploadedImages.length > 1 ? 's' : ''}`,
+        duration: 3000
+      })
     }
+  }, [generatedImages, createNewChat, currentChatId, saveImageToDB, toast, isPersistenceConfigured])
 
-    // Show success notification
-    toast({
-      title: "Video generated!",
-      description: `"${completedVideo.prompt}" is ready to view.`,
-      duration: 5000
-    })
-
-    // Update browser tab title
-    if (typeof window !== 'undefined') {
-      document.title = "✅ Video Ready - Gemini Chatbot"
-      setTimeout(() => {
-        document.title = "Gemini Chatbot"
-      }, 3000)
-    }
-  }, [toast, saveVideoToDB])
-
-  // Enhanced video error handler
-  const handleVideoError = useCallback((videoId: string, error: string) => {
-    console.log('[PAGE] Video generation failed:', videoId, error)
-
-    // Update the video in the list
-    setGeneratedVideos(prev => updateVideo(prev, videoId, { status: 'failed' as const, error }))
-
-    // Remove from polling pairs
-    setVideoPollingPairs(prev => prev.filter(pair => pair.videoId !== videoId))
-
-    // Show error notification
-    toast({
-      title: "Video generation failed",
-      description: error,
-      variant: "destructive",
-      duration: 7000
-    })
-  }, [toast])
-
-  // Setup multi-video polling
-  useMultiVideoPolling(videoPollingPairs, {
-    onComplete: handleVideoComplete,
-    onError: handleVideoError,
-    pollInterval: 8000,
-    maxPollTime: 600000 // 10 minutes
-  })
-
-  // Update browser tab title with progress
+  // Update document title based on video generation progress
   useEffect(() => {
     const generatingVideos = getAllGeneratingVideos()
 
@@ -964,8 +917,40 @@ export default function Home() {
       }
       setAnimatingImage(imageUrlOrImage)
     }
-    switchToVideoTab("Ready to animate your image")
-  }, [switchToVideoTab, toast])
+    setActiveCanvasTab("videos")
+  }, [ toast])
+
+  // Handle video completion
+  const handleVideoComplete = useCallback(async (video: GeneratedVideo) => {
+    console.log('[PAGE] Video completed:', video.id)
+    
+    // Update the video in state
+    setGeneratedVideos(prev => {
+      const updated = prev.map(v => 
+        v.id === video.id ? { ...video, status: 'completed' as const } : v
+      )
+      
+      // Save to localStorage
+      saveVideosToLocalStorage(updated)
+      
+      return updated
+    })
+    
+    // Update progress store
+    completeVideo(video.id)
+    
+    // Save to database if available
+    if (saveVideoToDB) {
+      await saveVideoToDB(video)
+    }
+    
+    // Show success notification
+    toast({
+      title: "Video generated!",
+      description: "Your video is ready to view.",
+      duration: 3000
+    })
+  }, [completeVideo, saveVideoToDB, toast])
 
   // Enhanced video animation handler
   const handleAnimate = useCallback(async (params: {
@@ -996,7 +981,7 @@ export default function Home() {
       setAnimatingImage(null)
 
       // Switch to video tab
-      switchToVideoTab("Video generation started")
+      setActiveCanvasTab("videos")
 
       // Add to progress store with duration for better time estimation
       addVideo(newVideo.id, params.prompt, params.duration)
@@ -1067,7 +1052,7 @@ export default function Home() {
         duration: 7000
       })
     }
-  }, [animatingImage, videoSettings, switchToVideoTab, addVideo, handleVideoComplete, failVideo, toast])
+  }, [animatingImage, videoSettings, addVideo, handleVideoComplete, failVideo, toast])
 
   // Handle video deletion
   const handleVideoDelete = useCallback(async (videoId: string) => {
@@ -1241,6 +1226,34 @@ export default function Home() {
     }
   }, [currentChatId])
 
+  // Handle generated videos change
+  const handleGeneratedVideosChange = useCallback((videos: GeneratedVideo[]) => {
+    console.log('[PAGE] handleGeneratedVideosChange called with', videos.length, 'videos')
+    
+    // Update the videos state
+    setGeneratedVideos(videos)
+    
+    // Save to localStorage
+    saveVideosToLocalStorage(videos)
+    
+    // Mark all saved video IDs
+    videos.forEach(video => {
+      if (!video.status || video.status === 'completed') {
+        savedVideoIdsRef.current.add(video.id)
+      }
+    })
+    
+    // Save to database if we have completed videos
+    videos.forEach(async (video) => {
+      if (video.status === 'completed' && !savedVideoIdsRef.current.has(video.id)) {
+        savedVideoIdsRef.current.add(video.id)
+        if (saveVideoToDB) {
+          await saveVideoToDB(video)
+        }
+      }
+    })
+  }, [saveVideoToDB])
+
 
   return (
     <main className="h-screen bg-[#1E1E1E]">
@@ -1262,7 +1275,7 @@ export default function Home() {
               onAnimateImage={handleAnimateImage}
               onGeneratedVideosChange={handleGeneratedVideosChange}
               onVideoGenerationStart={() => {
-                switchToVideoTab("Video generation started from chat")
+                setActiveCanvasTab("videos")
               }}
               generatedVideos={generatedVideos}
               onGeneratedAudioChange={handleGeneratedAudioChange}
@@ -1301,6 +1314,8 @@ export default function Home() {
               chatId={currentChatId}
               canvasState={canvasState}
               onCanvasStateChange={handleCanvasStateChange}
+            
+              onFileUpload={handleFileUpload}
             />
           }
           defaultLeftWidth={600}

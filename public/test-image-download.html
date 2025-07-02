@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Image Download</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 20px; border: 1px solid #ccc; border-radius: 8px; }
+        button { padding: 10px 20px; margin: 10px 0; cursor: pointer; }
+        .result { margin-top: 10px; color: green; }
+    </style>
+</head>
+<body>
+    <h1>Image Download Test</h1>
+    
+    <div class="test-section">
+        <h2>Test Instructions</h2>
+        <p>1. Open the app and generate some images</p>
+        <p>2. Click the download button on any image</p>
+        <p>3. Check that the downloaded file has a proper image extension (.jpg, .png, etc.)</p>
+        <p>4. Verify that the file can be opened in an image viewer</p>
+    </div>
+    
+    <div class="test-section">
+        <h2>Expected Behavior</h2>
+        <p>• Images will be converted to highest quality PNG format</p>
+        <p>• Downloads preserve original image dimensions</p>
+        <p>• Filenames include the sanitized prompt text</p>
+        <p>• Filenames have a timestamp for uniqueness</p>
+        <p>• All files will have the .png extension</p>
+        <p>• Example: "generate-an-image-of-a-sunset-2025-06-23t12-30-45.png"</p>
+    </div>
+    
+    <div class="test-section">
+        <h2>Manual Test</h2>
+        <p>Click the button below to test downloading a sample image:</p>
+        <button onclick="testDownload()">Test Download Sample Image</button>
+        <div id="result" class="result"></div>
+    </div>
+    
+    <script>
+        async function downloadImage(url, filename) {
+            try {
+                // Create an image element to load the image
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                
+                // Create a promise to handle image loading
+                const imageLoadPromise = new Promise((resolve, reject) => {
+                    img.onload = () => resolve();
+                    img.onerror = () => reject(new Error('Failed to load image'));
+                });
+                
+                // Load the image
+                img.src = url;
+                await imageLoadPromise;
+                
+                // Create a canvas with the same dimensions as the image
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    throw new Error('Failed to get canvas context');
+                }
+                
+                // Draw the image onto the canvas
+                ctx.drawImage(img, 0, 0);
+                
+                // Convert canvas to blob with highest quality PNG
+                const blob = await new Promise((resolve, reject) => {
+                    canvas.toBlob(
+                        (blob) => {
+                            if (blob) {
+                                resolve(blob);
+                            } else {
+                                reject(new Error('Failed to create blob'));
+                            }
+                        },
+                        'image/png',
+                        1.0 // Maximum quality
+                    );
+                });
+                
+                // Sanitize filename
+                const sanitizedFilename = filename
+                    .replace(/[^a-zA-Z0-9\s-]/g, '')
+                    .replace(/\s+/g, '-')
+                    .toLowerCase()
+                    .substring(0, 100)
+                    .replace(/^-+|-+$/g, '');
+                
+                // Create timestamp
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+                
+                // Construct final filename with PNG extension
+                const finalFilename = `${sanitizedFilename}-${timestamp}.png`;
+                
+                const downloadUrl = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = finalFilename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                // Clean up
+                setTimeout(() => URL.revokeObjectURL(downloadUrl), 100);
+                
+                return { 
+                    success: true, 
+                    filename: finalFilename, 
+                    dimensions: `${img.naturalWidth}x${img.naturalHeight}`,
+                    format: 'PNG (highest quality)'
+                };
+            } catch (error) {
+                console.error('Failed to download image:', error);
+                throw error;
+            }
+        }
+        
+        async function testDownload() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = 'Downloading...';
+            
+            try {
+                // Use a sample image URL (1x1 transparent pixel)
+                const sampleImageUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+                const result = await downloadImage(sampleImageUrl, 'Test image download functionality');
+                
+                resultDiv.innerHTML = `✓ Download successful!<br>Filename: ${result.filename}<br>Format: ${result.format}<br>Dimensions: ${result.dimensions}`;
+            } catch (error) {
+                resultDiv.innerHTML = `✗ Download failed: ${error.message}`;
+                resultDiv.style.color = 'red';
+            }
+        }
+    </script>
+</body>
+</html>

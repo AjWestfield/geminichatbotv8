@@ -11,11 +11,11 @@ export interface VideoGenerationRequest {
   prompt: string;
   imageUrl?: string;
   imageUri?: string; // Google AI File Manager URI
-  duration?: 5 | 10;
+  duration?: 5 | 8 | 10;
   aspectRatio?: '16:9' | '9:16' | '1:1';
-  model?: 'standard' | 'pro' | 'fast';
+  model?: 'standard' | 'pro' | 'fast' | 'veo3';
   negativePrompt?: string;
-  backend?: 'replicate' | 'huggingface';
+  backend?: 'replicate' | 'huggingface' | 'google';
   tier?: 'fast' | 'quality';
 }
 
@@ -55,7 +55,11 @@ export class VideoGenerationHandler {
       /(?:i want|i'd like|i need)\s+(?:you\s+)?(?:to\s+)?(?:create|make|generate)\s+(?:a\s+)?video\s+(.+)/i,
       /(?:create|make|generate)\s+(?:a\s+)?video\s+(?:like|similar to|just like)\s+(.+)/i,
       /(?:create|make|generate)\s+(?:me\s+)?(?:a\s+)?video/i,
-      /(?:can you|could you|please)\s+(?:create|make|generate)\s+(?:me\s+)?(?:a\s+)?video/i
+      /(?:can you|could you|please)\s+(?:create|make|generate)\s+(?:me\s+)?(?:a\s+)?video/i,
+      // VEO 3 specific patterns
+      /veo\s*3\s+(?:video|prompt|generation)/i,
+      /(?:generate|create)\s+(?:a\s+)?veo\s*3\s+video/i,
+      /8\s*second\s+(?:cinematic\s+)?video/i
     ];
 
     // Image-to-video patterns (when user mentions animating an existing image)
@@ -82,7 +86,19 @@ export class VideoGenerationHandler {
 
     // Check for duration specifications
     const durationMatch = message.match(/(\d+)\s*(?:second|sec|s)\s+(?:video|animation)/i);
-    let duration: 5 | 10 = durationMatch ? (parseInt(durationMatch[1]) === 10 ? 10 : 5) : 5;
+    let duration: 5 | 8 | 10 = 5;
+    if (durationMatch) {
+      const parsedDuration = parseInt(durationMatch[1]);
+      if (parsedDuration === 8) duration = 8;
+      else if (parsedDuration === 10) duration = 10;
+      else duration = 5;
+    }
+    
+    // Check for VEO 3 specific request (always 8 seconds)
+    const isVEO3Request = message.match(/veo\s*3|8\s*second\s+cinematic|google\s+veo/i);
+    if (isVEO3Request) {
+      duration = 8;
+    }
 
     // Auto-detect aspect ratio from uploaded image or fall back to text parsing
     let aspectRatio: '16:9' | '9:16' | '1:1' = '16:9';
@@ -118,16 +134,23 @@ export class VideoGenerationHandler {
     console.log(`[VIDEO DETECTION] Final aspect ratio: ${aspectRatio} (source: ${aspectRatioSource})`);
 
     // Check for model preference
-    let model: 'standard' | 'pro' = 'standard';
-    if (message.match(/high quality|best quality|pro|1080p|professional/i)) {
+    let model: 'standard' | 'pro' | 'veo3' = 'standard';
+    if (isVEO3Request) {
+      model = 'veo3';
+    } else if (message.match(/high quality|best quality|pro|1080p|professional/i)) {
       model = 'pro';
     }
 
     // Check for backend preference
-    let backend: 'replicate' | 'huggingface' = 'replicate';
+    let backend: 'replicate' | 'huggingface' | 'google' = 'replicate';
     let tier: 'fast' | 'quality' = 'fast';
     
-    if (message.match(/huggingface|hunyuan|hf/i)) {
+    if (isVEO3Request) {
+      backend = 'google';
+      // VEO 3 is always 16:9 landscape
+      aspectRatio = '16:9';
+      aspectRatioSource = 'veo3-default';
+    } else if (message.match(/huggingface|hunyuan|hf/i)) {
       backend = 'huggingface';
       // Check for tier preference
       if (message.match(/quality|high quality|best|h100/i)) {
@@ -257,13 +280,40 @@ export class VideoGenerationHandler {
 
     if (request.type === 'text-to-video') {
       const isHuggingFace = request.backend === 'huggingface';
-      const modelName = isHuggingFace 
+      const isVEO3 = request.model === 'veo3';
+      const modelName = isVEO3 
+        ? 'Google VEO 3'
+        : isHuggingFace 
         ? `HunyuanVideo (${request.tier === 'quality' ? 'H100 Quality' : 'L40 S Fast'})`
         : `Kling v1.6 ${request.model === 'pro' ? 'Pro' : 'Standard'}`;
-      const provider = isHuggingFace ? 'HuggingFace' : 'Replicate';
-      const timeEstimate = isHuggingFace 
+      const provider = isVEO3 ? 'Google' : isHuggingFace ? 'HuggingFace' : 'Replicate';
+      const timeEstimate = isVEO3 
+        ? '2-3 minutes'
+        : isHuggingFace 
         ? (request.tier === 'quality' ? '6-8 minutes (including cold start)' : '3-4 minutes')
         : '5-8 minutes';
+
+      if (isVEO3) {
+        return `I'll generate an 8-second cinematic video using Google's VEO 3 model! 🎬
+
+**VEO 3 Video Details:**
+- Model: Google VEO 3 (State-of-the-art video generation)
+- Duration: 8 seconds (VEO 3 standard)
+- Aspect Ratio: 16:9 Landscape (VEO 3 default)
+- Style: Photorealistic, cinematic, 35mm film aesthetic
+- Quality: Professional cinema-grade output
+
+**Your Prompt:** "${request.prompt}"
+
+**VEO 3 Features:**
+- Advanced temporal consistency
+- Realistic motion and physics
+- Professional cinematography
+- Film-grade color grading
+- Natural lighting and shadows
+
+The video is being generated and will appear in the Video tab. VEO 3 typically takes ${timeEstimate} to create your cinematic sequence.`;
+      }
 
       return `I'll generate a ${request.duration}-second video of "${request.prompt}" for you.
 
@@ -285,13 +335,40 @@ The video is being generated and will appear in the Video tab. ${modelName} typi
 The video generation has started! Check the Video tab in a few minutes.`;
     } else {
       const isHuggingFace = request.backend === 'huggingface';
-      const modelName = isHuggingFace 
+      const isVEO3 = request.model === 'veo3';
+      const modelName = isVEO3 
+        ? 'Google VEO 3'
+        : isHuggingFace 
         ? `HunyuanVideo (${request.tier === 'quality' ? 'H100 Quality' : 'L40 S Fast'})`
         : `Kling v1.6 ${request.model === 'pro' ? 'Pro (1080p)' : 'Standard (720p)'}`;
-      const provider = isHuggingFace ? 'HuggingFace' : 'Replicate';
-      const timeEstimate = isHuggingFace 
+      const provider = isVEO3 ? 'Google' : isHuggingFace ? 'HuggingFace' : 'Replicate';
+      const timeEstimate = isVEO3 
+        ? '2-3 minutes'
+        : isHuggingFace 
         ? (request.tier === 'quality' ? '6-8 minutes' : '3-4 minutes')
         : '5-8 minutes';
+
+      if (isVEO3) {
+        return `I'm creating an 8-second VEO 3 cinematic animation from your image! 🎬
+
+**VEO 3 Animation Details:**
+- Model: Google VEO 3 (Cinema-grade animation)
+- Duration: 8 seconds (VEO 3 standard)
+- Aspect Ratio: 16:9 Landscape
+- Style: Photorealistic cinematic motion
+- Source: Your uploaded image
+
+**Animation Instructions:** "${request.prompt}"
+
+**VEO 3 Animation Features:**
+- Smooth, realistic motion from static image
+- Professional camera movements
+- Natural physics and lighting continuity
+- Film-quality temporal consistency
+- 35mm cinematic aesthetic
+
+Your image is being transformed into a cinematic sequence. VEO 3 typically takes ${timeEstimate} to complete the animation.`;
+      }
 
       return `I'm animating your uploaded image into a ${request.duration}-second video! 🎬
 
@@ -318,13 +395,19 @@ The animation typically takes ${timeEstimate} to generate. You'll see the result
    * Extracts video generation parameters from a message
    */
   static parseVideoParameters(message: string): {
-    duration: 5 | 10;
+    duration: 5 | 8 | 10;
     aspectRatio: '16:9' | '9:16' | '1:1';
     negativePrompt: string;
   } {
     // Duration
     const durationMatch = message.match(/(\d+)\s*(?:second|sec|s)/i);
-    const duration = durationMatch ? (parseInt(durationMatch[1]) === 10 ? 10 : 5) : 5;
+    let duration: 5 | 8 | 10 = 5;
+    if (durationMatch) {
+      const parsedDuration = parseInt(durationMatch[1]);
+      if (parsedDuration === 8) duration = 8;
+      else if (parsedDuration === 10) duration = 10;
+      else duration = 5;
+    }
 
     // Aspect ratio (fallback for non-auto-detected cases)
     let aspectRatio: '16:9' | '9:16' | '1:1' = '16:9';

@@ -24,6 +24,7 @@ export interface GeneratedAudio {
   estimatedDuration?: string
   error?: string
   status?: 'pending' | 'generating' | 'completed' | 'failed'
+  generationPhase?: string // Enhanced: Current generation phase for detailed progress
 }
 
 interface AudioGalleryProps {
@@ -68,9 +69,9 @@ export function AudioGallery({ audios, onAudiosChange }: AudioGalleryProps) {
         <h3 className="text-lg font-semibold text-white">Generated Audio</h3>
       </div>
       <div className="space-y-4">
-        {audios.map((audio) => (
+        {audios.map((audio, idx) => (
           <AudioPlayerCard
-            key={audio.id}
+            key={`${audio.id ?? 'audio'}-${idx}`}
             id={audio.id}
             audioBase64={audio.audioBase64}
             mimeType={audio.mimeType}
@@ -80,6 +81,7 @@ export function AudioGallery({ audios, onAudiosChange }: AudioGalleryProps) {
             duration={audio.duration}
             isGenerating={audio.isGenerating || false}
             generationProgress={audio.progress}
+            generationPhase={audio.generationPhase}
             provider={audio.provider}
             onDelete={() => handleDelete(audio.id)}
             error={audio.error}

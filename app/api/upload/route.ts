@@ -4,6 +4,8 @@ import { NextResponse } from "next/server"
 import path from "node:path"
 import fs from "node:fs/promises"
 import os from "node:os"
+import { GEMINI_LIMITS, GeminiLimitUtils } from "@/lib/gemini-limits"
+import { getVideoDuration } from "@/lib/video-utils"
 
 // Initialize the File Manager with better error handling
 const apiKey = process.env.GEMINI_API_KEY
@@ -38,6 +40,26 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`[Upload API] Processing file: ${file.name}, Type: ${file.type}, Size: ${file.size} bytes`)
+
+    // Validate file size against Gemini API limits
+    if (!GeminiLimitUtils.isFileSizeValid(file.size)) {
+      const error = GeminiLimitUtils.getFileSizeError(file.size)
+      console.error(`[Upload API] File size validation failed: ${error}`)
+      return NextResponse.json(
+        { 
+          error: "File too large",
+          details: error,
+          maxFileSize: GeminiLimitUtils.formatFileSize(GEMINI_LIMITS.MAX_FILE_SIZE_BYTES),
+          troubleshooting: [
+            "1. Try compressing the file to reduce its size",
+            "2. For videos, consider lowering the resolution or trimming the duration",
+            "3. For images, try reducing the quality or dimensions",
+            `4. Maximum file size allowed: ${GeminiLimitUtils.formatFileSize(GEMINI_LIMITS.MAX_FILE_SIZE_BYTES)}`
+          ]
+        },
+        { status: 413 } // 413 Payload Too Large
+      )
+    }
 
     // Validate file type
     const supportedTypes = [
@@ -79,6 +101,51 @@ export async function POST(req: NextRequest) {
     // Convert File to Buffer
     const bytes = await file.arrayBuffer()
     const buffer = Buffer.from(bytes)
+
+    // For video files, validate duration against Gemini limits
+    if (file.type.startsWith('video/')) {
+      // Create a temporary file to check duration
+      const tempDir = os.tmpdir()
+      const tempPath = path.join(tempDir, `duration_check_${Date.now()}_${file.name}`)
+      
+      try {
+        // Write buffer to temp file for duration analysis
+        await fs.writeFile(tempPath, buffer)
+        
+        // Get video duration
+        const duration = await getVideoDuration(tempPath)
+        
+        // Clean up temp file after duration check
+        await fs.unlink(tempPath)
+        
+        // Validate duration against Gemini limits
+        if (!GeminiLimitUtils.isVideoDurationValid(duration)) {
+          const error = GeminiLimitUtils.getVideoDurationError(duration)
+          console.error(`[Upload API] Video duration validation failed: ${error}`)
+          return NextResponse.json(
+            { 
+              error: "Video too long",
+              details: error,
+              maxDuration: GeminiLimitUtils.formatDuration(GEMINI_LIMITS.DEFAULT_MAX_VIDEO_DURATION),
+              actualDuration: GeminiLimitUtils.formatDuration(duration),
+              troubleshooting: [
+                "1. Trim the video to reduce its duration",
+                "2. Cut the video into shorter segments",
+                "3. Use video editing software to compress the timeline",
+                `4. Maximum video duration allowed: ${GeminiLimitUtils.formatDuration(GEMINI_LIMITS.DEFAULT_MAX_VIDEO_DURATION)}`
+              ]
+            },
+            { status: 413 } // 413 Payload Too Large
+          )
+        }
+        
+        console.log(`[Upload API] Video duration validated: ${GeminiLimitUtils.formatDuration(duration)} (within ${GeminiLimitUtils.formatDuration(GEMINI_LIMITS.DEFAULT_MAX_VIDEO_DURATION)} limit)`)
+        
+      } catch (durationError) {
+        console.warn(`[Upload API] Failed to validate video duration: ${durationError.message}`)
+        // Continue with upload if duration check fails (non-blocking)
+      }
+    }
 
     // Upload to Gemini
     try {
@@ -191,3 +258,7 @@ export async function POST(req: NextRequest) {
     )
   }
 }
+
+// Runtime configuration for Vercel
+export const runtime = 'nodejs'
+export const maxDuration = 60 // 60 seconds timeout

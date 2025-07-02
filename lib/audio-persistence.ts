@@ -54,7 +54,7 @@ async function initDB(): Promise<IDBDatabase> {
 // Calculate size of audio data
 function calculateAudioSize(audio: GeneratedAudio): number {
   // Rough estimate: base64 is ~1.33x the binary size
-  const base64Size = audio.audioBase64.length
+  const base64Size = (audio.audioBase64 ?? '').length
   const binarySize = Math.ceil(base64Size * 0.75)
   
   // Add metadata size (rough estimate)

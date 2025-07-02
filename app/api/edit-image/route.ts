@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { smartEditWithGPTImage1, checkGPTImage1Available } from "@/lib/openai-image-client"
 import { ReplicateImageClient } from "@/lib/replicate-client"
-import { ensureImageUrlAccessible, isReplicateDeliveryUrl, validateImageUrl } from "@/lib/image-url-validator"
+import { ensureImageUrlAccessible, isReplicateDeliveryUrl, validateImageUrl, isVercelBlobUrl, downloadImageAsDataUrl } from "@/lib/image-url-validator"
 import { getImageByLocalId } from "@/lib/services/chat-persistence"
 import { uploadImageToBlob } from "@/lib/storage/blob-storage"
+import { ensurePermanentImageStorage } from "@/lib/storage/permanent-image-storage"
 import { generateImageId } from "@/lib/image-utils"
 
 export async function POST(req: NextRequest) {
@@ -194,104 +195,38 @@ export async function POST(req: NextRequest) {
         console.log(`[API] Validating image URL for Replicate: ${imageUrl}`)
         let validImageUrl = imageUrl
         
-        // Check if this is an expired Replicate URL or any inaccessible URL
-        if (!imageUrl.startsWith('data:') && !imageUrl.includes('blob.vercel-storage.com')) {
-          console.log(`[API] URL needs validation, running accessibility check...`)
+        // Use permanent storage mechanism to ensure URL is accessible
+        try {
+          validImageUrl = await ensurePermanentImageStorage(imageUrl, {
+            imageId: imageId,
+            filename: `edit_${generateImageId()}_${Date.now()}.png`,
+            forceReupload: false
+          })
+          console.log(`[API] Image URL validated/recovered successfully`)
+        } catch (error: any) {
+          console.error(`[API] Failed to ensure permanent image storage:`, error)
           
-          try {
-            // Use our enhanced validator instead of HEAD request
-            const isValid = await validateImageUrl(imageUrl)
-            console.log(`[API] URL validation result: ${isValid}`)
-            
-            if (!isValid) {
-              console.log(`[API] URL validation failed, attempting recovery...`)
-              
-              // If we have an imageId and it's a Replicate URL, try to fetch from database first
-              if (imageId && isReplicateDeliveryUrl(imageUrl)) {
-                console.log(`[API] Attempting to fetch permanent URL from database for image ID: ${imageId}`)
-                const storedImage = await getImageByLocalId(imageId)
-                
-                if (storedImage && storedImage.url) {
-                  console.log(`[API] Found permanent URL in database: ${storedImage.url.substring(0, 50)}...`)
-                  validImageUrl = storedImage.url
-                } else {
-                  console.log(`[API] No permanent URL found in database, attempting direct recovery`)
-                  // Try to download and convert to data URL
-                  validImageUrl = await ensureImageUrlAccessible(imageUrl)
-                  console.log(`[API] Successfully converted to data URL`)
-                }
-              } else {
-                // Try to download and convert to data URL
-                validImageUrl = await ensureImageUrlAccessible(imageUrl)
-                console.log(`[API] Successfully converted to data URL`)
+          // Provide helpful error message based on URL type
+          const isReplicateUrl = imageUrl.includes('replicate.delivery')
+          const isVercelBlob = isVercelBlobUrl(imageUrl)
+          
+          return NextResponse.json(
+            {
+              error: "Image URL inaccessible",
+              details: error.message || "Failed to access the image URL",
+              suggestion: isVercelBlob 
+                ? "The Vercel Blob Storage URL is no longer accessible. Please upload the image file directly to continue editing."
+                : isReplicateUrl
+                ? "The Replicate URL has expired. Please upload the image file directly to continue editing."
+                : "The image URL is no longer accessible. Please upload the image file directly to continue editing.",
+              technicalInfo: {
+                originalUrl: imageUrl?.substring(0, 100) + '...',
+                errorType: "url_inaccessible",
+                provider: isReplicateUrl ? "replicate" : (isVercelBlob ? "vercel_blob" : "unknown")
               }
-            }
-          } catch (error) {
-            console.error(`[API] URL accessibility check failed:`, error)
-            
-            // If we have an imageId and it's a Replicate URL, try database lookup as fallback
-            if (imageId && isReplicateDeliveryUrl(imageUrl)) {
-              console.log(`[API] Attempting database lookup as fallback for image ID: ${imageId}`)
-              const storedImage = await getImageByLocalId(imageId)
-              
-              if (storedImage && storedImage.url) {
-                console.log(`[API] Found permanent URL in database (fallback): ${storedImage.url.substring(0, 50)}...`)
-                validImageUrl = storedImage.url
-              } else {
-                // Try to recover the image by downloading it
-                try {
-                  validImageUrl = await ensureImageUrlAccessible(imageUrl)
-                  console.log(`[API] Successfully recovered image as data URL`)
-                } catch (recoveryError) {
-                  console.error(`[API] Failed to recover image:`, recoveryError)
-                  
-                  // Provide helpful error message based on URL type
-                  const isReplicateUrl = imageUrl.includes('replicate.delivery')
-                  return NextResponse.json(
-                    {
-                      error: "Image URL expired or inaccessible",
-                      details: isReplicateUrl 
-                        ? "The Replicate image URL has expired. Replicate URLs are only available for 24 hours."
-                        : "The image URL is no longer accessible.",
-                      suggestion: "To edit this image, please save it to your device first, then upload it again.",
-                      technicalInfo: {
-                        originalUrl: imageUrl,
-                        errorType: "url_expired",
-                        provider: isReplicateUrl ? "replicate" : "unknown"
-                      }
-                    },
-                    { status: 400 }
-                  )
-                }
-              }
-            } else {
-              // Try to recover the image by downloading it
-              try {
-                validImageUrl = await ensureImageUrlAccessible(imageUrl)
-                console.log(`[API] Successfully recovered image as data URL`)
-              } catch (recoveryError) {
-                console.error(`[API] Failed to recover image:`, recoveryError)
-                
-                // Provide helpful error message based on URL type
-                const isReplicateUrl = imageUrl.includes('replicate.delivery')
-                return NextResponse.json(
-                  {
-                    error: "Image URL expired or inaccessible",
-                    details: isReplicateUrl 
-                      ? "The Replicate image URL has expired. Replicate URLs are only available for 24 hours."
-                      : "The image URL is no longer accessible.",
-                    suggestion: "To edit this image, please save it to your device first, then upload it again.",
-                    technicalInfo: {
-                      originalUrl: imageUrl,
-                      errorType: "url_expired",
-                      provider: isReplicateUrl ? "replicate" : "unknown"
-                    }
-                  },
-                  { status: 400 }
-                )
-              }
-            }
-          }
+            },
+            { status: 400 }
+          )
         }
         
         const replicateClient = new ReplicateImageClient(process.env.REPLICATE_API_KEY)
@@ -411,31 +346,61 @@ export async function POST(req: NextRequest) {
       // Handle Replicate URL 404 errors
       if (error.message?.includes('404 Client Error') || error.message?.includes('404 Not Found')) {
         const isReplicateUrl = imageUrl?.includes('replicate.delivery')
+        const isVercelBlob = imageUrl ? isVercelBlobUrl(imageUrl) : false
         const hasTmpInUrl = imageUrl?.includes('tmp')
         
         console.error("404 Error detected:", {
           isReplicateUrl,
+          isVercelBlob,
           hasImageId: !!imageId,
           hasTmpInUrl,
           urlPattern: imageUrl?.match(/replicate\.delivery\/(\w+)\//)?.slice(0, 2)
         })
         
+        let errorDetails = "The image URL is no longer accessible."
+        let suggestion = "To edit this image, please:\n1. Save it to your device first\n2. Upload it again using the image upload button\n3. Then apply your edits"
+        
+        if (isReplicateUrl) {
+          errorDetails = hasTmpInUrl 
+            ? "This Replicate image is no longer available. The image appears to be a temporary file that was cleaned up. Please regenerate the image or save it locally before editing."
+            : "This Replicate image is no longer available. While Replicate URLs typically last 24 hours, this one appears to have been removed earlier. Please regenerate the image or save it locally before editing."
+        } else if (isVercelBlob) {
+          errorDetails = "This Vercel Blob Storage URL is no longer accessible. The image may have been deleted or expired."
+          suggestion = "To continue editing:\n1. If you have the original image saved, upload it again\n2. Or regenerate the image from the original prompt\n3. Consider saving important images locally to avoid this issue"
+        }
+        
         return NextResponse.json(
           {
             error: "Image no longer available",
-            details: isReplicateUrl 
-              ? hasTmpInUrl 
-                ? "This Replicate image is no longer available. The image appears to be a temporary file that was cleaned up. Please regenerate the image or save it locally before editing."
-                : "This Replicate image is no longer available. While Replicate URLs typically last 24 hours, this one appears to have been removed earlier. Please regenerate the image or save it locally before editing."
-              : "The image URL is no longer accessible.",
-            suggestion: "To edit this image, please:\n1. Save it to your device first\n2. Upload it again using the image upload button\n3. Then apply your edits",
+            details: errorDetails,
+            suggestion: suggestion,
             technicalInfo: {
               originalUrl: imageUrl?.substring(0, 100) + '...',
               errorType: "url_not_found",
-              provider: isReplicateUrl ? "replicate" : "unknown"
+              provider: isReplicateUrl ? "replicate" : (isVercelBlob ? "vercel_blob" : "unknown")
             }
           },
           { status: 400 }
+        )
+      }
+
+      // Handle network/connection errors
+      if (error.code === 'network_error' || 
+          error.cause?.code === 'ECONNRESET' || 
+          error.cause?.code === 'ETIMEDOUT' ||
+          error.message?.includes('Network connection failed')) {
+        return NextResponse.json(
+          {
+            error: "Network connection error",
+            details: "The connection was interrupted while editing the image. This can happen with large images or slow connections.",
+            suggestion: "Please try again. If the issue persists:\n1. Try using a smaller image\n2. Check your internet connection\n3. Try again in a few moments",
+            technicalInfo: {
+              errorCode: error.cause?.code || 'network_error',
+              model: model,
+              imageSize: imageUrl?.length || 0
+            }
+          },
+          { status: 503 } // Service Unavailable
         )
       }
 
@@ -536,3 +501,7 @@ export async function GET() {
     }, { status: 500 })
   }
 }
+
+// Runtime configuration for Vercel
+export const runtime = 'nodejs'
+export const maxDuration = 60 // 60 seconds timeout

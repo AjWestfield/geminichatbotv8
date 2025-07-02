@@ -38,6 +38,35 @@ export function BrowserView({
   const [error, setError] = useState<string | null>(null);
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const browserClient = useRef(getBrowserAutomationClient());
+  
+  // Check for active browser agent session
+  useEffect(() => {
+    const checkBrowserAgentSession = () => {
+      const agentSessionId = localStorage.getItem('browserAgentSessionId');
+      if (agentSessionId && !controlledSessionId) {
+        // Use the browser agent session
+        console.log('[BrowserView] Using browser agent session:', agentSessionId);
+        setSession({
+          id: agentSessionId,
+          url: 'https://google.com',
+          title: 'Browser Agent Session',
+          screenshot: null
+        } as BrowserSession);
+      }
+    };
+    
+    checkBrowserAgentSession();
+    
+    // Listen for storage events
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'browserAgentSessionId') {
+        checkBrowserAgentSession();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [controlledSessionId]);
 
   // Initialize or connect to session
   useEffect(() => {
@@ -55,8 +84,12 @@ export function BrowserView({
             setScreenshot(existingSession.screenshot || null);
           }
         } else {
-          // Create new session
+          // Create new session (will use real browser if backend is running)
           const newSession = await browserClient.current.createSession({
+            query: 'Start browser session',
+            enableStreaming: true,
+            llm: 'claude-sonnet-4-20250514',
+            embeddedMode: false,
             headless: false,
             viewport: { width: 1280, height: 720 }
           });
@@ -290,7 +323,12 @@ export function BrowserView({
               </p>
               <Button
                 onClick={async () => {
-                  const newSession = await browserClient.current.createSession();
+                  const newSession = await browserClient.current.createSession({
+                    query: 'Start browser session',
+                    enableStreaming: true,
+                    llm: 'claude-sonnet-4-20250514',
+                    embeddedMode: false
+                  });
                   setSession(newSession);
                   onSessionChange?.(newSession);
                 }}

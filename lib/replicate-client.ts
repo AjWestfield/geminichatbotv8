@@ -433,14 +433,50 @@ export class ReplicateImageClient {
         }
       }
       
-      // 2. Array of URLs
+      // 2. Array of URLs or streams
       if (Array.isArray(output) && output.length > 0) {
         const firstItem = output[0];
+        
+        // Handle string URLs
         if (typeof firstItem === 'string' && (firstItem.startsWith('http') || firstItem.startsWith('data:'))) {
           console.log('Image generated successfully (array):', firstItem);
           console.log('[REPLICATE] Full URL from array:', firstItem);
           console.log('[REPLICATE] URL includes temp file?', firstItem.includes('tmp'));
           return firstItem;
+        }
+        
+        // Handle ReadableStream (new Replicate response format)
+        if (firstItem && typeof firstItem === 'object' && 'getReader' in firstItem) {
+          console.log('[REPLICATE] Detected ReadableStream response, converting to data URL...');
+          try {
+            const reader = (firstItem as ReadableStream).getReader();
+            const chunks: Uint8Array[] = [];
+            
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              chunks.push(value);
+            }
+            
+            // Combine chunks
+            const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+            const combined = new Uint8Array(totalLength);
+            let offset = 0;
+            for (const chunk of chunks) {
+              combined.set(chunk, offset);
+              offset += chunk.length;
+            }
+            
+            // Convert to base64 data URL
+            const base64 = Buffer.from(combined).toString('base64');
+            const dataUrl = `data:image/png;base64,${base64}`;
+            
+            console.log('[REPLICATE] Converted stream to data URL, length:', dataUrl.length);
+            return dataUrl;
+          } catch (streamError) {
+            console.error('[REPLICATE] Failed to process stream:', streamError);
+            throw new Error('Failed to process image stream from Replicate');
+          }
         }
       }
       

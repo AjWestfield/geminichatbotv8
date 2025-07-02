@@ -41,6 +41,8 @@ npm run db:optimize-performance  # Optimize database performance
 npm run check-api-keys  # Verify API key configuration
 npm run verify:install  # Verify installation completeness
 npm run setup-persistence  # Setup database and storage
+node test-zapier-social-media.js  # Test Zapier MCP social media integration
+node test-zapier-tool-schemas.js  # Discover Zapier tool schemas (debugging)
 ```
 
 ## Architecture Overview
@@ -106,6 +108,13 @@ The application uses environment variables for all external services. Minimum re
 - External API calls implement retry logic
 - Components lazy load for performance
 - State updates are batched for efficiency
+
+### File Upload Limitations
+- Uploaded files (images, videos, audio) are stored in Google's Gemini API temporarily
+- Files expire after 48 hours and become unavailable
+- If you see "File is not in an ACTIVE state" errors, the file needs to be re-uploaded
+- The app now validates file state before use and provides clear error messages
+- Consider implementing local file caching for frequently used files
 
 ### Security Considerations
 - Never commit `.env.local` or expose API keys

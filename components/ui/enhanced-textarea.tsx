@@ -10,6 +10,7 @@ interface EnhancedTextareaProps extends TextareaProps {
   context?: "chat" | "image-edit" | "video" | "audio" | "multi-image"
   hideEnhancer?: boolean
   enhancerClassName?: string
+  isNegativePrompt?: boolean
 }
 
 export const EnhancedTextarea = forwardRef<HTMLTextAreaElement, EnhancedTextareaProps>(
@@ -22,6 +23,7 @@ export const EnhancedTextarea = forwardRef<HTMLTextAreaElement, EnhancedTextarea
     hideEnhancer = false,
     enhancerClassName,
     disabled,
+    isNegativePrompt = false,
     ...props 
   }, ref) => {
     const stringValue = value?.toString() || ""
@@ -62,6 +64,7 @@ export const EnhancedTextarea = forwardRef<HTMLTextAreaElement, EnhancedTextarea
             context={context}
             disabled={disabled}
             className={enhancerClassName}
+            isNegativePrompt={isNegativePrompt}
           />
         )}
       </div>

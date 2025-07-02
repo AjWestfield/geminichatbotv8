@@ -69,12 +69,44 @@ export function generateVideoThumbnail(videoUrl: string): Promise<string> {
 }
 
 /**
- * Get video duration (placeholder implementation)
+ * Get video duration using yt-dlp for server-side detection
+ * NOTE: This function is only available on the server side
  */
-export function getVideoDuration(videoUrl: string): Promise<number> {
-  // This is a placeholder implementation
-  // In a real implementation, you would analyze the video file
-  return Promise.resolve(0)
+export async function getVideoDuration(videoPath: string): Promise<number> {
+  // Only run on server side
+  if (typeof window !== 'undefined') {
+    console.warn('[VideoUtils] getVideoDuration called on client side, returning 0')
+    return 0
+  }
+  
+  try {
+    // Import yt-dlp-wrap dynamically for server-side usage
+    const YTDlpWrap = (await import('yt-dlp-wrap')).default
+    const ytdlp = new YTDlpWrap()
+
+    // Extract video metadata to get duration (follows same pattern as YouTube download)
+    const metadataOutput = await ytdlp.exec([
+      videoPath,
+      '--print', '%(duration)s',
+      '--no-download',
+      '--no-warnings'
+    ]) as string
+
+    const duration = parseFloat(metadataOutput.trim())
+    
+    // Return duration in seconds, or 0 if invalid
+    return isNaN(duration) ? 0 : duration
+  } catch (error) {
+    console.warn(`[VideoUtils] Failed to get video duration for ${videoPath}:`, error)
+    return 0
+  }
+}
+
+/**
+ * Get video duration for client-side usage (HTML5 video element)
+ */
+export function getVideoDurationFromElement(videoElement: HTMLVideoElement): number {
+  return videoElement.duration || 0
 }
 
 /**
@@ -146,4 +178,28 @@ export function getInvalidVideoMessage(video: GeneratedVideo): string {
     console.error('[VideoUtils] Error processing video URL:', error, video);
     return 'Error processing video data.';
   }
+}
+
+/**
+ * Convert a data URL to a blob for thumbnail processing
+ */
+export function dataURLtoBlob(dataURL: string): Blob {
+  const arr = dataURL.split(',')
+  const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg'
+  const bstr = atob(arr[1])
+  let n = bstr.length
+  const u8arr = new Uint8Array(n)
+  
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n)
+  }
+  
+  return new Blob([u8arr], { type: mime })
+}
+
+/**
+ * Extract YouTube thumbnail URL from video ID
+ */
+export function getYouTubeThumbnailUrl(videoId: string, quality: 'default' | 'hq' | 'mq' | 'sd' | 'maxres' = 'maxres'): string {
+  return `https://img.youtube.com/vi/${videoId}/${quality}default.jpg`
 }

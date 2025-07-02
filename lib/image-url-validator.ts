@@ -151,9 +151,15 @@ export async function ensureImageUrlAccessible(url: string): Promise<string> {
   
   // All recovery methods failed
   const isReplicateUrl = url.includes('replicate.delivery')
-  const errorMessage = isReplicateUrl
-    ? 'This Replicate image URL has expired (URLs expire after 24 hours). Please upload the image file directly or use a more recent image.'
-    : 'The image URL is no longer accessible. Please check the URL or upload the image file directly.'
+  const isVercelBlob = isVercelBlobUrl(url)
+  
+  let errorMessage = 'The image URL is no longer accessible. Please check the URL or upload the image file directly.'
+  
+  if (isReplicateUrl) {
+    errorMessage = 'This Replicate image URL has expired (URLs expire after 24 hours). Please upload the image file directly or use a more recent image.'
+  } else if (isVercelBlob) {
+    errorMessage = 'This Vercel Blob Storage URL is no longer accessible. The image may have been deleted or expired. Please upload the image file directly to continue editing.'
+  }
   
   console.error('[ensureImageUrlAccessible] All recovery methods failed:', errors)
   
@@ -165,6 +171,13 @@ export async function ensureImageUrlAccessible(url: string): Promise<string> {
  */
 export function isReplicateDeliveryUrl(url: string): boolean {
   return url.includes('replicate.delivery')
+}
+
+/**
+ * Check if URL is a Vercel Blob Storage URL
+ */
+export function isVercelBlobUrl(url: string): boolean {
+  return url.includes('blob.vercel-storage.com') || url.includes('public.blob.vercel-storage.com')
 }
 
 /**
@@ -182,4 +195,24 @@ export function isLikelyExpiredReplicateUrl(url: string, imageTimestamp?: Date):
   
   const ageInHours = (Date.now() - imageTimestamp.getTime()) / (1000 * 60 * 60)
   return ageInHours > 24 // Replicate URLs expire after 24 hours
+}
+
+/**
+ * Check if a Vercel Blob URL might be expired
+ * Vercel Blob URLs can be deleted or expire based on configuration
+ */
+export function isLikelyExpiredVercelBlobUrl(url: string, imageTimestamp?: Date): boolean {
+  if (!isVercelBlobUrl(url)) {
+    return false
+  }
+  
+  // If we can't determine age, assume it might be expired
+  if (!imageTimestamp) {
+    return true
+  }
+  
+  // Vercel Blob URLs can have different expiration policies
+  // Conservative check: assume they might expire after 30 days
+  const ageInDays = (Date.now() - imageTimestamp.getTime()) / (1000 * 60 * 60 * 24)
+  return ageInDays > 30
 }

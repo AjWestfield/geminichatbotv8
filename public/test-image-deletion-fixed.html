@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Image Deletion - Fixed</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #1a1a1a;
+      color: #fff;
+    }
+    .test-section {
+      background: #2a2a2a;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+    button:hover {
+      background: #2563eb;
+    }
+    .status {
+      margin-top: 10px;
+      padding: 10px;
+      background: #333;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      white-space: pre-wrap;
+    }
+    .success {
+      background: #065f46;
+      color: #10b981;
+    }
+    .error {
+      background: #7f1d1d;
+      color: #ef4444;
+    }
+  </style>
+</head>
+<body>
+  <h1>Image Deletion Test - Fixed Version</h1>
+  
+  <div class="test-section">
+    <h2>1. Setup Test Image</h2>
+    <button onclick="createTestImage()">Create Test Image in localStorage</button>
+    <button onclick="listImages()">List Current Images</button>
+    <div id="setup-status" class="status"></div>
+  </div>
+
+  <div class="test-section">
+    <h2>2. Test Deletion</h2>
+    <button onclick="testDeletion()">Test Delete First Image</button>
+    <button onclick="clearAllImages()">Clear All Images</button>
+    <div id="delete-status" class="status"></div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'generated-images';
+    let testImageId = null;
+
+    function log(elementId, message, isError = false) {
+      const element = document.getElementById(elementId);
+      element.textContent = message;
+      element.className = `status ${isError ? 'error' : 'success'}`;
+      console.log(message);
+    }
+
+    function createTestImage() {
+      const testImage = {
+        id: 'img_test_' + Date.now(),
+        url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+        prompt: 'Test image for deletion',
+        model: 'test',
+        quality: 'standard',
+        created_at: new Date().toISOString()
+      };
+
+      // Get existing images
+      const existingImages = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      
+      // Add new test image
+      existingImages.push(testImage);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(existingImages));
+      
+      testImageId = testImage.id;
+      log('setup-status', `✅ Created test image with ID: ${testImage.id}\nTotal images: ${existingImages.length}`);
+    }
+
+    function listImages() {
+      const images = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      const message = images.length === 0 
+        ? 'No images in localStorage' 
+        : `Found ${images.length} images:\n` + images.map((img, i) => `${i + 1}. ${img.id} - ${img.prompt}`).join('\n');
+      log('setup-status', message);
+    }
+
+    async function testDeletion() {
+      const images = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      
+      if (images.length === 0) {
+        log('delete-status', 'No images to delete. Create a test image first.', true);
+        return;
+      }
+
+      const imageToDelete = images[0];
+      log('delete-status', `Attempting to delete image: ${imageToDelete.id}...`);
+
+      try {
+        // Call the API
+        const response = await fetch(`/api/images/${encodeURIComponent(imageToDelete.id)}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+          // Remove from localStorage
+          const updatedImages = images.filter(img => img.id !== imageToDelete.id);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedImages));
+          
+          log('delete-status', 
+            `✅ Success!\n` +
+            `Response: ${JSON.stringify(data, null, 2)}\n` +
+            `Image removed from localStorage.\n` +
+            `Remaining images: ${updatedImages.length}`
+          );
+        } else {
+          log('delete-status', 
+            `❌ API Error:\n${JSON.stringify(data, null, 2)}`, 
+            true
+          );
+        }
+      } catch (error) {
+        log('delete-status', `❌ Network Error: ${error.message}`, true);
+      }
+    }
+
+    function clearAllImages() {
+      localStorage.removeItem(STORAGE_KEY);
+      log('delete-status', '✅ Cleared all images from localStorage');
+    }
+
+    // Initial load
+    window.onload = () => {
+      listImages();
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod:*)",
+      "Bash(grep:*)",
+      "Bash(ls:*)",
+      "Bash(npm --prefix .. run lint)",
+      "mcp__browser-use-Docs__fetch_browser_use_documentation",
+      "Bash(rm:*)",
+      "Bash(find:*)",
+      "Bash(rg:*)",
+      "Bash(npm --prefix .. run lint -- components/animate-image-modal.tsx components/ui/enhanced-textarea.tsx components/ui/prompt-enhancer.tsx)",
+      "Bash(npm run lint)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npm run lint:*)",
+      "Bash(node:*)"
+    ],
+    "deny": []
+  }
+}

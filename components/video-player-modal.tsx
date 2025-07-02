@@ -2,16 +2,18 @@
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Download, ExternalLink } from "lucide-react"
+import { Download, ExternalLink, Microscope, AudioLines } from "lucide-react"
 import { GeneratedVideo } from "@/lib/video-generation-types"
 
 interface VideoPlayerModalProps {
   video: GeneratedVideo | null
   isOpen: boolean
   onClose: () => void
+  onAnalyze?: (video: GeneratedVideo) => void
+  onTranscribe?: (video: GeneratedVideo) => void
 }
 
-export function VideoPlayerModal({ video, isOpen, onClose }: VideoPlayerModalProps) {
+export function VideoPlayerModal({ video, isOpen, onClose, onAnalyze, onTranscribe }: VideoPlayerModalProps) {
   if (!video) return null
 
   const handleDownload = async () => {
@@ -72,23 +74,53 @@ export function VideoPlayerModal({ video, isOpen, onClose }: VideoPlayerModalPro
           </div>
 
           {/* Actions */}
-          <div className="flex justify-end gap-2 pt-4 border-t border-[#3A3A3A]">
-            <Button
-              variant="outline"
-              onClick={() => window.open(video.url, '_blank')}
-              className="border-[#3A3A3A]"
-            >
-              <ExternalLink className="h-4 w-4 mr-2" />
-              Open in New Tab
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleDownload}
-              className="border-[#3A3A3A]"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Download
-            </Button>
+          <div className="flex justify-between pt-4 border-t border-[#3A3A3A]">
+            <div className="flex gap-2">
+              {onAnalyze && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    onAnalyze(video)
+                    onClose()
+                  }}
+                  className="border-[#3A3A3A] hover:bg-blue-500/10 hover:border-blue-500/50"
+                >
+                  <Microscope className="h-4 w-4 mr-2" />
+                  Analyze
+                </Button>
+              )}
+              {onTranscribe && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    onTranscribe(video)
+                    onClose()
+                  }}
+                  className="border-[#3A3A3A] hover:bg-purple-500/10 hover:border-purple-500/50"
+                >
+                  <AudioLines className="h-4 w-4 mr-2" />
+                  Transcribe
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => window.open(video.url, '_blank')}
+                className="border-[#3A3A3A]"
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Open in New Tab
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleDownload}
+                className="border-[#3A3A3A]"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>

@@ -25,6 +25,7 @@ interface AudioPlayerCardProps {
   duration?: number
   isGenerating: boolean
   generationProgress?: number
+  generationPhase?: string // Enhanced: Current generation phase
   provider?: string
   onDelete?: () => void
   onRetry?: () => void
@@ -42,6 +43,7 @@ export function AudioPlayerCard({
   duration: initialDuration,
   isGenerating,
   generationProgress = 0,
+  generationPhase,
   provider = "default",
   onDelete,
   onRetry,
@@ -430,7 +432,7 @@ export function AudioPlayerCard({
             <div className="flex items-center gap-2 text-sm text-gray-400">
               <span>{voiceName}</span>
               <span>•</span>
-              <span>{formatDistanceToNow(timestamp, { addSuffix: true })}</span>
+              <span>{timestamp ? formatDistanceToNow(new Date(timestamp as any), { addSuffix: true }) : "Just now"}</span>
               {provider === "wavespeed" && (
                 <>
                   <span>•</span>
@@ -502,14 +504,21 @@ export function AudioPlayerCard({
                 <span className="text-gray-400">{Math.round(generationProgress)}%</span>
               </div>
               <Progress value={generationProgress} className="h-2 bg-gray-700" />
-              {generationProgress < 30 && (
-                <p className="text-xs text-gray-500">Initializing WaveSpeed API...</p>
-              )}
-              {generationProgress >= 30 && generationProgress < 70 && (
-                <p className="text-xs text-gray-500">Generating speech synthesis...</p>
-              )}
-              {generationProgress >= 70 && (
-                <p className="text-xs text-gray-500">Finalizing audio...</p>
+              {/* ENHANCED: Show dynamic phase-based progress or fallback to progress-based messages */}
+              {generationPhase ? (
+                <p className="text-xs text-gray-500">{generationPhase}...</p>
+              ) : (
+                <>
+                  {generationProgress < 30 && (
+                    <p className="text-xs text-gray-500">Initializing WaveSpeed API...</p>
+                  )}
+                  {generationProgress >= 30 && generationProgress < 70 && (
+                    <p className="text-xs text-gray-500">Generating speech synthesis...</p>
+                  )}
+                  {generationProgress >= 70 && (
+                    <p className="text-xs text-gray-500">Finalizing audio...</p>
+                  )}
+                </>
               )}
             </div>
             <p className="text-sm text-gray-400 line-clamp-2">{text}</p>

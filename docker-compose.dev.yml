@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  # Next.js application in development mode
+  app-dev:
+    image: node:20-alpine
+    working_dir: /app
+    command: npm run dev
+    ports:
+      - "3000:3000"
+    environment:
+      # Development settings
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true  # For file watching in Docker
+      
+      # AI API Keys
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
+      
+      # Service URLs
+      - VNC_BROWSER_SERVICE_URL=http://vnc-browser:8003
+      - BROWSER_USE_API_KEY=${BROWSER_USE_API_KEY}
+      
+      # Storage
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_API_KEY=${SUPABASE_API_KEY}
+      - BLOB_READ_WRITE_TOKEN=${BLOB_READ_WRITE_TOKEN}
+      
+      # Other services
+      - REPLICATE_API_KEY=${REPLICATE_API_KEY}
+      - WAVESPEED_API_KEY=${WAVESPEED_API_KEY}
+      
+    volumes:
+      - .:/app
+      - /app/node_modules  # Prevent overwriting node_modules
+      - /app/.next         # Prevent overwriting .next build
+    depends_on:
+      - vnc-browser
+    networks:
+      - app-network
+    stdin_open: true
+    tty: true
+
+  # VNC Browser Service
+  vnc-browser:
+    build:
+      context: ./browser-agent
+      dockerfile: Dockerfile.vnc
+    ports:
+      - "5900:5900"   # VNC port
+      - "6080:6080"   # noVNC web port  
+      - "8003:8003"   # API port
+    environment:
+      - DISPLAY=:99
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    volumes:
+      - ./browser-agent:/app  # Mount source for development
+      - /dev/shm:/dev/shm     # Shared memory for Chrome
+    privileged: true
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

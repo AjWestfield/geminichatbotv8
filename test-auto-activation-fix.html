@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto-Activation Fix Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .test-case {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .expected { border-left: 4px solid #27ae60; }
+        .test-button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .test-button:hover {
+            background-color: #2980b9;
+        }
+        .result {
+            background-color: #ecf0f1;
+            padding: 10px;
+            border-radius: 3px;
+            margin-top: 10px;
+            font-family: monospace;
+        }
+        .success { background-color: #d5f4e6; color: #27ae60; }
+        .error { background-color: #fadbd8; color: #e74c3c; }
+        h1 { color: #2c3e50; }
+        h2 { color: #34495e; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Auto-Activation Fix Test</h1>
+        <p>This test verifies that automatic deep research activation has been disabled and only manual activation works.</p>
+    </div>
+
+    <div class="container">
+        <h2>📋 Test Cases</h2>
+        
+        <div class="test-case expected">
+            <h3>✅ Expected Behavior</h3>
+            <p><strong>Deep Research Toggle OFF (Default):</strong></p>
+            <ul>
+                <li>Regular search queries should use Perplexity API</li>
+                <li>No automatic browser tab switching</li>
+                <li>No automatic deep research mode activation</li>
+                <li>No browser agent activation</li>
+            </ul>
+            
+            <p><strong>Deep Research Toggle ON (Manual):</strong></p>
+            <ul>
+                <li>Queries should route to Browser Use Agent</li>
+                <li>Browser tab switching allowed</li>
+                <li>Browser agent activation allowed</li>
+            </ul>
+        </div>
+
+        <div class="test-case">
+            <h3>Test 1: Regular Search Query</h3>
+            <p><strong>Query:</strong> "What's the latest AI news?"</p>
+            <p><strong>Expected:</strong> Should use Perplexity API, no deep research activation</p>
+            <button class="test-button" onclick="testRegularSearch()">Test Regular Search</button>
+            <div id="test1Result" class="result" style="display: none;"></div>
+        </div>
+
+        <div class="test-case">
+            <h3>Test 2: Research-Like Query</h3>
+            <p><strong>Query:</strong> "Research the latest developments in quantum computing"</p>
+            <p><strong>Expected:</strong> Should still use Perplexity API, no auto-activation</p>
+            <button class="test-button" onclick="testResearchQuery()">Test Research Query</button>
+            <div id="test2Result" class="result" style="display: none;"></div>
+        </div>
+
+        <div class="test-case">
+            <h3>Test 3: Question Query</h3>
+            <p><strong>Query:</strong> "What are the top AI companies in 2024?"</p>
+            <p><strong>Expected:</strong> Should use Perplexity API, no auto-activation</p>
+            <button class="test-button" onclick="testQuestionQuery()">Test Question Query</button>
+            <div id="test3Result" class="result" style="display: none;"></div>
+        </div>
+
+        <div class="test-case">
+            <h3>Test 4: Deep Research Prefix (Manual)</h3>
+            <p><strong>Query:</strong> "deep research on AI companies"</p>
+            <p><strong>Expected:</strong> Should route to Browser Use Agent (manual activation)</p>
+            <button class="test-button" onclick="testDeepResearchPrefix()">Test Deep Research Prefix</button>
+            <div id="test4Result" class="result" style="display: none;"></div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>📊 Test Results Summary</h2>
+        <div id="summaryResults" class="result">
+            Click the test buttons above to run the tests.
+        </div>
+    </div>
+
+    <script>
+        let testResults = [];
+
+        async function testRegularSearch() {
+            const resultDiv = document.getElementById('test1Result');
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = 'Testing regular search query...';
+            resultDiv.className = 'result';
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: [
+                            { role: 'user', content: "What's the latest AI news?" }
+                        ],
+                        model: 'gemini-2.0-flash'
+                    })
+                });
+
+                const responseText = await response.text();
+                
+                // Check if it's using Perplexity (should contain web search markers)
+                const hasWebSearch = responseText.includes('[WEB_SEARCH_STARTED]') || responseText.includes('WEB_SEARCH');
+                const hasDeepResearch = responseText.includes('Deep Research Mode') || responseText.includes('Browser Use Agent');
+
+                if (hasWebSearch && !hasDeepResearch) {
+                    resultDiv.textContent = '✅ PASS: Using Perplexity API, no auto-activation';
+                    resultDiv.className = 'result success';
+                    testResults[0] = 'PASS';
+                } else if (hasDeepResearch) {
+                    resultDiv.textContent = '❌ FAIL: Auto-activated deep research mode';
+                    resultDiv.className = 'result error';
+                    testResults[0] = 'FAIL';
+                } else {
+                    resultDiv.textContent = '⚠️ UNCLEAR: No web search detected';
+                    resultDiv.className = 'result';
+                    testResults[0] = 'UNCLEAR';
+                }
+            } catch (error) {
+                resultDiv.textContent = '❌ ERROR: ' + error.message;
+                resultDiv.className = 'result error';
+                testResults[0] = 'ERROR';
+            }
+            
+            updateSummary();
+        }
+
+        async function testResearchQuery() {
+            const resultDiv = document.getElementById('test2Result');
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = 'Testing research-like query...';
+            resultDiv.className = 'result';
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: [
+                            { role: 'user', content: "Research the latest developments in quantum computing" }
+                        ],
+                        model: 'gemini-2.0-flash'
+                    })
+                });
+
+                const responseText = await response.text();
+                
+                const hasWebSearch = responseText.includes('[WEB_SEARCH_STARTED]') || responseText.includes('WEB_SEARCH');
+                const hasDeepResearch = responseText.includes('Deep Research Mode') || responseText.includes('Browser Use Agent');
+
+                if (hasWebSearch && !hasDeepResearch) {
+                    resultDiv.textContent = '✅ PASS: Using Perplexity API, no auto-activation';
+                    resultDiv.className = 'result success';
+                    testResults[1] = 'PASS';
+                } else if (hasDeepResearch) {
+                    resultDiv.textContent = '❌ FAIL: Auto-activated deep research mode';
+                    resultDiv.className = 'result error';
+                    testResults[1] = 'FAIL';
+                } else {
+                    resultDiv.textContent = '⚠️ UNCLEAR: No web search detected';
+                    resultDiv.className = 'result';
+                    testResults[1] = 'UNCLEAR';
+                }
+            } catch (error) {
+                resultDiv.textContent = '❌ ERROR: ' + error.message;
+                resultDiv.className = 'result error';
+                testResults[1] = 'ERROR';
+            }
+            
+            updateSummary();
+        }
+
+        async function testQuestionQuery() {
+            const resultDiv = document.getElementById('test3Result');
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = 'Testing question query...';
+            resultDiv.className = 'result';
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: [
+                            { role: 'user', content: "What are the top AI companies in 2024?" }
+                        ],
+                        model: 'gemini-2.0-flash'
+                    })
+                });
+
+                const responseText = await response.text();
+                
+                const hasWebSearch = responseText.includes('[WEB_SEARCH_STARTED]') || responseText.includes('WEB_SEARCH');
+                const hasDeepResearch = responseText.includes('Deep Research Mode') || responseText.includes('Browser Use Agent');
+
+                if (hasWebSearch && !hasDeepResearch) {
+                    resultDiv.textContent = '✅ PASS: Using Perplexity API, no auto-activation';
+                    resultDiv.className = 'result success';
+                    testResults[2] = 'PASS';
+                } else if (hasDeepResearch) {
+                    resultDiv.textContent = '❌ FAIL: Auto-activated deep research mode';
+                    resultDiv.className = 'result error';
+                    testResults[2] = 'FAIL';
+                } else {
+                    resultDiv.textContent = '⚠️ UNCLEAR: No web search detected';
+                    resultDiv.className = 'result';
+                    testResults[2] = 'UNCLEAR';
+                }
+            } catch (error) {
+                resultDiv.textContent = '❌ ERROR: ' + error.message;
+                resultDiv.className = 'result error';
+                testResults[2] = 'ERROR';
+            }
+            
+            updateSummary();
+        }
+
+        async function testDeepResearchPrefix() {
+            const resultDiv = document.getElementById('test4Result');
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = 'Testing deep research prefix...';
+            resultDiv.className = 'result';
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: [
+                            { role: 'user', content: "deep research on AI companies" }
+                        ],
+                        model: 'gemini-2.0-flash'
+                    })
+                });
+
+                const responseText = await response.text();
+                
+                const hasDeepResearch = responseText.includes('Deep Research Mode') || responseText.includes('Browser Use Agent');
+                const hasWebSearch = responseText.includes('[WEB_SEARCH_STARTED]');
+
+                if (hasDeepResearch && !hasWebSearch) {
+                    resultDiv.textContent = '✅ PASS: Correctly routed to Browser Use Agent';
+                    resultDiv.className = 'result success';
+                    testResults[3] = 'PASS';
+                } else if (hasWebSearch) {
+                    resultDiv.textContent = '❌ FAIL: Incorrectly routed to Perplexity';
+                    resultDiv.className = 'result error';
+                    testResults[3] = 'FAIL';
+                } else {
+                    resultDiv.textContent = '⚠️ UNCLEAR: No clear routing detected';
+                    resultDiv.className = 'result';
+                    testResults[3] = 'UNCLEAR';
+                }
+            } catch (error) {
+                resultDiv.textContent = '❌ ERROR: ' + error.message;
+                resultDiv.className = 'result error';
+                testResults[3] = 'ERROR';
+            }
+            
+            updateSummary();
+        }
+
+        function updateSummary() {
+            const summaryDiv = document.getElementById('summaryResults');
+            const totalTests = 4;
+            const completedTests = testResults.filter(r => r !== undefined).length;
+            const passedTests = testResults.filter(r => r === 'PASS').length;
+            const failedTests = testResults.filter(r => r === 'FAIL').length;
+            
+            let summary = `Tests completed: ${completedTests}/${totalTests}\n`;
+            summary += `Passed: ${passedTests}, Failed: ${failedTests}\n\n`;
+            
+            if (completedTests === totalTests) {
+                if (failedTests === 0) {
+                    summary += '🎉 All tests passed! Auto-activation has been successfully disabled.';
+                    summaryDiv.className = 'result success';
+                } else {
+                    summary += '⚠️ Some tests failed. Auto-activation may still be occurring.';
+                    summaryDiv.className = 'result error';
+                }
+            } else {
+                summary += 'Run all tests to see complete results.';
+                summaryDiv.className = 'result';
+            }
+            
+            summaryDiv.textContent = summary;
+        }
+    </script>
+</body>
+</html>

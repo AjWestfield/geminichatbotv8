@@ -1,5 +1,6 @@
 import { MCPClientWrapper, MCPServerConfig, MCPTool, MCPResource } from './mcp-client';
 import { MCPConfigManager, MCPConfigManagerClient } from './mcp-config-manager';
+import { getDefaultMCPServers, shouldAutoConnectServer, shouldAutoEnableServer } from './mcp-default-servers';
 
 export interface MCPServerInstance {
   config: MCPServerConfig;
@@ -240,10 +241,24 @@ export class MCPServerManager {
     const config = typeof window === 'undefined' 
       ? await MCPConfigManager.loadConfig()
       : MCPConfigManagerClient.loadConfig();
-    if (!config) return;
+    
+    // Get existing server IDs from config
+    const existingServerIds = new Set(config?.servers?.map(s => s.id) || []);
+    
+    // Get default servers that should be added
+    const defaultServers = getDefaultMCPServers();
+    
+    // Combine config servers with default servers (avoiding duplicates)
+    const allServers = [
+      ...(config?.servers || []),
+      ...defaultServers.filter(ds => !existingServerIds.has(ds.id))
+    ];
+    
+    // Track if we need to save the updated config
+    let configChanged = false;
 
     try {
-      for (const serverConfig of config.servers) {
+      for (const serverConfig of allServers) {
         // Only add if not already loaded
         if (!this.servers.has(serverConfig.id)) {
           // Don't use addServer here to avoid saving back to config
@@ -254,6 +269,28 @@ export class MCPServerManager {
             status: 'disconnected',
           };
           this.servers.set(serverConfig.id, instance);
+          
+          // If this is a default server not in config, mark for save
+          if (!existingServerIds.has(serverConfig.id)) {
+            configChanged = true;
+          }
+        }
+      }
+      
+      // Save the updated config if we added default servers
+      if (configChanged) {
+        await this.saveToConfig();
+      }
+      
+      // Auto-connect servers that should be connected
+      for (const [serverId, instance] of this.servers) {
+        if (shouldAutoConnectServer(serverId) && instance.status === 'disconnected') {
+          try {
+            console.log(`[MCPServerManager] Auto-connecting server: ${serverId}`);
+            await this.connectServer(serverId);
+          } catch (error) {
+            console.error(`[MCPServerManager] Failed to auto-connect ${serverId}:`, error);
+          }
         }
       }
     } catch (error) {

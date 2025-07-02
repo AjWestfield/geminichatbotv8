@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  # Optimized Next.js application with performance improvements
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - NODE_ENV=production
+    ports:
+      - "3000:3000"
+    environment:
+      # Performance optimizations
+      - NODE_ENV=production
+      - NODE_OPTIONS=--max-old-space-size=2048
+      - NEXT_TELEMETRY_DISABLED=1
+      
+      # Connection pooling
+      - DATABASE_POOL_SIZE=10
+      - DATABASE_STATEMENT_TIMEOUT=5000
+      
+      # API Keys from .env file
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
+      
+      # Storage
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_API_KEY=${SUPABASE_API_KEY}
+      - BLOB_READ_WRITE_TOKEN=${BLOB_READ_WRITE_TOKEN}
+      
+      # Other services
+      - REPLICATE_API_KEY=${REPLICATE_API_KEY}
+      - WAVESPEED_API_KEY=${WAVESPEED_API_KEY}
+    volumes:
+      - ./public:/app/public:ro
+      - nextjs-cache:/app/.next/cache
+      - node-modules:/app/node_modules
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # Redis for caching (new addition for performance)
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # Nginx for static file serving and caching
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./public:/usr/share/nginx/html:ro
+      - nginx-cache:/var/cache/nginx
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  nextjs-cache:
+  node-modules:
+  redis-data:
+  nginx-cache:

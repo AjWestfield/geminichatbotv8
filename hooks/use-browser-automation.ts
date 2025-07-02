@@ -115,14 +115,18 @@ export function useBrowserAutomation(options: UseBrowserAutomationOptions = {}) 
     };
   }, [session, storageKey, onSessionChange]);
 
-  const startSession = useCallback(async () => {
+  const startSession = useCallback(async (query?: string, embeddedMode = false) => {
     try {
       setIsLoading(true);
       setError(null);
       
       const newSession = await browserClient.current.createSession({
+        query: query || 'Start browser session for research',
+        enableStreaming: true,
+        llm: 'claude-sonnet-4-20250514',
         headless: false,
-        viewport: { width: 1280, height: 720 }
+        viewport: { width: 1280, height: 720 },
+        embeddedMode: embeddedMode
       });
       
       setSession(newSession);
@@ -132,7 +136,7 @@ export function useBrowserAutomation(options: UseBrowserAutomationOptions = {}) 
         localStorage.setItem(storageKey, newSession.id);
       }
       
-      toast.success('Browser session started');
+      toast.success(embeddedMode ? 'Embedded browser ready' : 'Browser session started');
       return newSession;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to start browser';

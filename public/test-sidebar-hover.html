@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Sidebar Hover Fix</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #1a1a1a;
+      color: #fff;
+    }
+    .test-section {
+      background: #2a2a2a;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .status {
+      margin-top: 10px;
+      padding: 10px;
+      background: #333;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      white-space: pre-wrap;
+    }
+    .success {
+      background: #065f46;
+      color: #10b981;
+    }
+    .error {
+      background: #7f1d1d;
+      color: #ef4444;
+    }
+    button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    button:hover {
+      background: #2563eb;
+    }
+  </style>
+</head>
+<body>
+  <h1>Sidebar Hover Fix Test</h1>
+  
+  <div class="test-section">
+    <h2>Test Instructions</h2>
+    <p>This page tests the fix for the sidebar hover error.</p>
+    <ol>
+      <li>Open your main app at <a href="http://localhost:3000" target="_blank">http://localhost:3000</a></li>
+      <li>Open the browser Developer Console (F12)</li>
+      <li>Hover over chat sessions in the sidebar</li>
+      <li>Check if any errors appear in the console</li>
+    </ol>
+  </div>
+
+  <div class="test-section">
+    <h2>Direct Function Test</h2>
+    <button onclick="testPreloadChat()">Test preloadChat Function</button>
+    <button onclick="testGetChat()">Test getChat Function</button>
+    <div id="test-status" class="status"></div>
+  </div>
+
+  <div class="test-section">
+    <h2>Expected Behavior</h2>
+    <ul>
+      <li>✅ No "Cannot read properties of null" errors</li>
+      <li>✅ Sidebar remains responsive</li>
+      <li>✅ Console shows "Supabase not configured" if not set up</li>
+      <li>✅ Functions return null gracefully instead of throwing</li>
+    </ul>
+  </div>
+
+  <script type="module">
+    window.testPreloadChat = async function() {
+      const statusEl = document.getElementById('test-status');
+      statusEl.textContent = 'Testing preloadChat...';
+      
+      try {
+        const module = await import('/lib/services/chat-persistence-optimized.js');
+        await module.preloadChat('test-chat-' + Date.now());
+        statusEl.textContent = '✅ preloadChat executed without error\nCheck console for any warnings';
+        statusEl.className = 'status success';
+      } catch (error) {
+        statusEl.textContent = '❌ Error: ' + error.message + '\n' + error.stack;
+        statusEl.className = 'status error';
+      }
+    };
+
+    window.testGetChat = async function() {
+      const statusEl = document.getElementById('test-status');
+      statusEl.textContent = 'Testing getChat...';
+      
+      try {
+        const module = await import('/lib/services/chat-persistence-optimized.js');
+        const result = await module.getChat('test-chat-' + Date.now());
+        
+        if (result === null) {
+          statusEl.textContent = '✅ getChat returned null (expected when Supabase not configured)\nThis is the correct behavior!';
+          statusEl.className = 'status success';
+        } else {
+          statusEl.textContent = '✅ getChat returned data:\n' + JSON.stringify(Object.keys(result), null, 2);
+          statusEl.className = 'status success';
+        }
+      } catch (error) {
+        statusEl.textContent = '❌ Error: ' + error.message + '\n' + error.stack;
+        statusEl.className = 'status error';
+      }
+    };
+  </script>
+</body>
+</html>

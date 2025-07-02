@@ -11,8 +11,9 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { downloadImage, formatImageTimestamp, getQualityBadgeColor, saveGeneratedImages, loadGeneratedImages, clearImageStorage, validateImageUrl, isImageUrlLikelyExpired, preloadImage, imagePerformanceMonitor } from "@/lib/image-utils"
+import { downloadImage, formatImageTimestamp, getQualityBadgeColor, saveGeneratedImages, loadGeneratedImages, clearImageStorage, validateImageUrl, isImageUrlLikelyExpired, preloadImage, imagePerformanceMonitor, deleteImageFromLocalStorage } from "@/lib/image-utils"
 import { ImageEditModal } from "@/components/image-edit-modal"
+import { SafeImage } from "@/components/ui/safe-image-simple"
 // Temporarily using enhanced modal for debugging
 import { ImageUpscaleModal } from "@/components/image-upscale-modal-enhanced"
 import { MultiImageEditModal } from "@/components/multi-image-edit-modal"
@@ -21,7 +22,7 @@ import { ImageLoadingCard } from "@/components/image-loading-card"
 import { useImageProgressStore } from "@/lib/stores/image-progress-store"
 import { Compare } from "@/components/ui/compare"
 
-import { getSourceImagesForEdit } from "@/lib/database-operations"
+import { getSourceImagesForEdit } from "@/lib/services/chat-persistence"
 import { toast } from "sonner"
 
 interface StoredImage {
@@ -183,13 +184,25 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
         method: 'DELETE',
       })
 
-      const data = await response.json()
+      // Check if response is JSON before parsing
+      const contentType = response.headers.get('content-type')
+      let data: any = {}
+      
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json()
+      } else {
+        // If not JSON, likely an HTML error page
+        const text = await response.text()
+        console.error('[ImageGallery] Non-JSON response received:', text.substring(0, 200))
+        data = { error: 'Server returned non-JSON response', details: response.status }
+      }
 
       if (!response.ok) {
         console.error('[ImageGallery] Delete API error:', {
           status: response.status,
           error: data.error,
-          details: data.details
+          details: data.details,
+          fullData: data
         })
         throw new Error(data.error || 'Failed to delete image')
       }
@@ -198,6 +211,12 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
       const updatedImages = images.filter(img => img.id !== imageId)
       setImages(updatedImages)
       onImagesChange?.(updatedImages)
+
+      // Also delete from localStorage to ensure consistency
+      deleteImageFromLocalStorage(imageId)
+
+      // Save updated images to localStorage
+      saveGeneratedImages(updatedImages)
 
       // Close modal if the deleted image was currently selected
       if (selectedImage && selectedImage.id === imageId) {
@@ -268,7 +287,18 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
             method: 'DELETE',
           })
 
-          const data = await response.json()
+          // Check if response is JSON before parsing
+          const contentType = response.headers.get('content-type')
+          let data: any = {}
+          
+          if (contentType && contentType.includes('application/json')) {
+            data = await response.json()
+          } else {
+            // If not JSON, likely an HTML error page
+            const text = await response.text()
+            console.error('[ImageGallery] Non-JSON response received:', text.substring(0, 200))
+            data = { error: 'Server returned non-JSON response', details: response.status }
+          }
 
           if (!response.ok) {
             console.error('[ImageGallery] Delete API error:', {
@@ -295,6 +325,12 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
       const updatedImages = images.filter(img => !deletedImageIds.includes(img.id))
       setImages(updatedImages)
       onImagesChange?.(updatedImages)
+
+      // Also delete from localStorage to ensure consistency
+      deletedImageIds.forEach(id => deleteImageFromLocalStorage(id))
+
+      // Save updated images to localStorage
+      saveGeneratedImages(updatedImages)
 
       // Clear selection and exit selection mode
       clearSelection()
@@ -374,6 +410,15 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
 
   // Smooth animation handler for opening modal
   const handleImageClick = (image: GeneratedImage) => {
+    console.log('[ImageGallery] Image clicked:', {
+      id: image.id,
+      model: image.model,
+      isMultiImageEdit: image.isMultiImageEdit,
+      isMultiImageComposition: image.isMultiImageComposition,
+      hasInputImages: !!image.inputImages,
+      inputImagesLength: image.inputImages?.length,
+      firstInputImage: image.inputImages?.[0]?.substring(0, 50) + '...'
+    });
     setIsAnimating(true)
     setSelectedImage(image)
     // Allow animation to start
@@ -514,7 +559,7 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
 
   if (images.length === 0 && generatingImages.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center p-8">
+      <div className="flex flex-col items-center justify-center h-full text-center p-8" data-testid="image-gallery">
         <div className="w-20 h-20 rounded-full bg-[#2B2B2B] flex items-center justify-center mb-4">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="No images">
             <title>No images</title>
@@ -524,9 +569,14 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
           </svg>
         </div>
         <h3 className="text-xl font-semibold text-white mb-2">No Images Generated Yet</h3>
-        <p className="text-[#B0B0B0] max-w-sm">
+        <p className="text-[#B0B0B0] max-w-sm mb-4">
           Start generating images by typing prompts like "Generate an image of..." in the chat.
         </p>
+        <div className="mt-4 p-4 border-2 border-dashed border-gray-600 rounded-lg">
+          <p className="text-sm text-gray-400">
+            <span className="font-medium text-blue-400">Tip:</span> You can also drag and drop images here to upload them
+          </p>
+        </div>
       </div>
     )
   }
@@ -655,25 +705,61 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
       {/* Image Grid */}
       <ScrollArea className="flex-1 p-4">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {/* Show generating images first */}
-          {generatingImages.map((progress) => (
-            <ImageLoadingCard
-              key={progress.imageId}
-              imageId={progress.imageId}
-              onCancel={(id) => {
-                removeProgress(id)
-              }}
-            />
-          ))}
-
-          {/* Then show completed images */}
-          {filteredImages.map((image) => {
-            // Skip if this image is currently generating
-            if (generatingImages.some(g => g.imageId === image.id)) {
-              return null
-            }
-
-            const isSelected = selectedImageIds.has(image.id)
+          {/* Create a unified list combining generating and completed images */}
+          {(() => {
+            // Create a map of all items with their timestamps
+            const allItems: Array<{ type: 'generating' | 'completed', item: any, timestamp: Date }> = []
+            
+            // Add generating images with their creation timestamps
+            generatingImages.forEach(progress => {
+              allItems.push({
+                type: 'generating',
+                item: progress,
+                timestamp: progress.createdAt
+              })
+            })
+            
+            // Add completed images that aren't currently generating
+            filteredImages.forEach(image => {
+              // Skip if this image is still generating (has a progress entry)
+              if (!generatingImages.some(g => g.imageId === image.id)) {
+                allItems.push({
+                  type: 'completed',
+                  item: image,
+                  timestamp: image.timestamp
+                })
+              }
+            })
+            
+            // Sort by timestamp (newest first) with safety checks
+            allItems.sort((a, b) => {
+              // Ensure timestamps are valid Date objects
+              const aTime = a.timestamp instanceof Date ? a.timestamp : new Date(a.timestamp)
+              const bTime = b.timestamp instanceof Date ? b.timestamp : new Date(b.timestamp)
+              
+              // Handle invalid dates
+              if (isNaN(aTime.getTime())) return 1
+              if (isNaN(bTime.getTime())) return -1
+              
+              return bTime.getTime() - aTime.getTime()
+            })
+            
+            // Render the unified list
+            return allItems.map(({ type, item }) => {
+              if (type === 'generating') {
+                const progress = item
+                return (
+                  <ImageLoadingCard
+                    key={progress.imageId}
+                    imageId={progress.imageId}
+                    onCancel={(id) => {
+                      removeProgress(id)
+                    }}
+                  />
+                )
+              } else {
+                const image = item
+                const isSelected = selectedImageIds.has(image.id)
 
             return (
               <div
@@ -715,123 +801,14 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
                 )}
 
                 {image.url ? (
-                  <img
+                  <SafeImage
                     src={image.url}
+                    imageId={image.id}
                     alt={image.prompt}
                     className="w-full h-full object-cover rounded-lg"
-                    loading="lazy"
-                    onLoadStart={() => {
-                      imagePerformanceMonitor.startTracking(image.id, image.url)
-                    }}
-                    onError={(e) => {
-                      const target = e.currentTarget
-                      const errorEvent = e.nativeEvent as ErrorEvent
-
-                      // Enhanced error logging with detailed information
-                      const errorDetails = {
-                        url: image.url,
-                        id: image.id,
-                        imageTimestamp: image.timestamp,
-                        isReplicateUrl: image.url?.includes('replicate.delivery') || false,
-                        isBlobUrl: image.url?.includes('blob.vercel-storage.com') || false,
-                        isDataUrl: image.url?.startsWith('data:') || false,
-                        urlLength: image.url?.length || 0,
-                        errorType: errorEvent?.type || 'unknown',
-                        errorMessage: errorEvent?.message || 'No error message',
-                        targetSrc: target.src,
-                        targetComplete: target.complete,
-                        targetNaturalWidth: target.naturalWidth,
-                        targetNaturalHeight: target.naturalHeight,
-                        networkState: (target as any).networkState,
-                        readyState: (target as any).readyState,
-                        userAgent: navigator.userAgent,
-                        errorTimestamp: new Date().toISOString()
-                      }
-
-                      console.error('[ImageGallery] Image failed to load:', errorDetails)
-
-                      // Prevent multiple error handlers from running
-                      if (target.dataset.errorHandled) return
-                      target.dataset.errorHandled = 'true'
-
-                      // Try to reload the image once before showing error
-                      if (!target.dataset.retryAttempted) {
-                        target.dataset.retryAttempted = 'true'
-                        imagePerformanceMonitor.recordRetry(image.id)
-                        console.log('[ImageGallery] Attempting to retry image load:', image.id)
-                        setTimeout(() => {
-                          target.src = image.url + '?retry=' + Date.now()
-                        }, 1000)
-                        return
-                      }
-
-                      // Record error metrics
-                      imagePerformanceMonitor.recordError(image.id, `${errorDetails.errorType}: ${errorDetails.errorMessage}`)
-
-                      // Replace with enhanced broken image placeholder
-                      target.style.display = 'none'
-
-                      // Show enhanced broken image indicator
-                      const parent = target.parentElement
-                      if (parent && !parent.querySelector('.broken-image-indicator')) {
-                        const isReplicateUrl = image.url?.includes('replicate.delivery') || false
-                        const isBlobUrl = image.url?.includes('blob.vercel-storage.com') || false
-                        const brokenDiv = document.createElement('div')
-                        brokenDiv.className = 'broken-image-indicator w-full h-full bg-[#1A1A1A] flex items-center justify-center border-2 border-dashed border-red-500/30 cursor-pointer hover:border-red-500/50 transition-colors'
-                        brokenDiv.innerHTML = `
-                          <div class="text-center p-4">
-                            <div class="text-red-400 mb-2">⚠️</div>
-                            <p class="text-xs text-red-400 font-medium">Image unavailable</p>
-                            <p class="text-xs text-gray-500 mt-1">
-                              ${isReplicateUrl ? 'Replicate URL expired (24h limit)' :
-                                isBlobUrl ? 'Blob storage URL may be invalid' :
-                                'URL may have expired or be inaccessible'}
-                            </p>
-                            <p class="text-xs text-gray-400 mt-2">Click to retry loading</p>
-                          </div>
-                        `
-
-                        // Add click handler to retry loading
-                        brokenDiv.addEventListener('click', () => {
-                          console.log('[ImageGallery] Manual retry requested for image:', image.id)
-                          brokenDiv.remove()
-                          target.style.display = 'block'
-                          target.dataset.errorHandled = ''
-                          target.dataset.retryAttempted = ''
-                          target.src = image.url + '?manual_retry=' + Date.now()
-                        })
-
-                        parent.appendChild(brokenDiv)
-                      }
-                    }}
-                    onLoad={(e) => {
-                      const target = e.currentTarget
-
-                      // Record performance metrics
-                      imagePerformanceMonitor.recordSuccess(
-                        image.id,
-                        target.naturalWidth,
-                        target.naturalHeight,
-                        target.src.length
-                      )
-
-                      console.log('[ImageGallery] Image loaded successfully:', {
-                        id: image.id,
-                        url: image.url,
-                        naturalWidth: target.naturalWidth,
-                        naturalHeight: target.naturalHeight,
-                        fileSize: target.src.length,
-                        isReplicateUrl: image.url?.includes('replicate.delivery') || false,
-                        isBlobUrl: image.url?.includes('blob.vercel-storage.com') || false,
-                        isDataUrl: image.url?.startsWith('data:') || false,
-                        loadTimestamp: new Date().toISOString(),
-                        wasRetried: target.dataset.retryAttempted === 'true'
-                      })
-
-                      // Clear any retry flags since image loaded successfully
-                      target.dataset.errorHandled = ''
-                      target.dataset.retryAttempted = ''
-                    }}
+                    showLoadingState={true}
+                    showErrorState={true}
+                    enableRetry={true}
                   />
                 ) : (
                   <div className="w-full h-full bg-[#1A1A1A] flex items-center justify-center">
@@ -930,8 +907,10 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
                   </div>
                 </div>
               </div>
-            )
-          })}
+                )
+              }
+            })
+          })()}
         </div>
       </ScrollArea>
 
@@ -1013,6 +992,13 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
               isFullScreen ? "h-[calc(100vh-3rem)] bg-[#0A0A0A]" : ""
             )}>
               {/* Multi-Image Edit/Composition Comparison View */}
+              {console.log('[ImageGallery] Modal render check:', {
+                isMultiImageEdit: selectedImage.isMultiImageEdit,
+                isMultiImageComposition: selectedImage.isMultiImageComposition,
+                hasInputImages: !!selectedImage.inputImages,
+                inputImagesLength: selectedImage.inputImages?.length,
+                showMultiView: (selectedImage.isMultiImageEdit || selectedImage.isMultiImageComposition) && selectedImage.inputImages && selectedImage.inputImages.length > 0
+              })}
               {(selectedImage.isMultiImageEdit || selectedImage.isMultiImageComposition) && selectedImage.inputImages && selectedImage.inputImages.length > 0 ? (
                 // Multi-image comparison view
                 <>
@@ -1034,7 +1020,7 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
                               Result
                             </div>
                             <div 
-                              className="w-full h-full cursor-pointer hover:ring-2 hover:ring-purple-500 transition-all rounded-lg overflow-hidden"
+                              className="w-full h-full cursor-pointer hover:ring-2 hover:ring-purple-500 transition-all rounded-lg overflow-hidden bg-black"
                               onClick={() => {
                                 // Create a clean image object for single view (without multi-image properties)
                                 const cleanImage: GeneratedImage = {
@@ -1065,21 +1051,14 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
                                 setSelectedImage(cleanImage);
                               }}
                             >
-                              <img
+                              <SafeImage
                                 src={selectedImage.url}
+                                imageId={selectedImage.id}
                                 alt="Generated"
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  const target = e.currentTarget
-                                  target.style.display = 'none'
-                                  const parent = target.parentElement
-                                  if (parent && !parent.querySelector('.result-error')) {
-                                    const errorDiv = document.createElement('div')
-                                    errorDiv.className = 'result-error w-full h-full bg-red-900/20 flex items-center justify-center text-red-400 rounded'
-                                    errorDiv.innerHTML = '<div class="text-center"><div>⚠️</div><div class="text-xs">Failed to load</div></div>'
-                                    parent.appendChild(errorDiv)
-                                  }
-                                }}
+                                className="w-full h-full object-contain"
+                                showLoadingState={true}
+                                showErrorState={true}
+                                enableRetry={true}
                               />
                             </div>
                           </div>
@@ -1094,10 +1073,10 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
                             selectedImage.inputImages.length > 6 ? "overflow-y-auto custom-scrollbar" : ""
                           )}>
                             <div className={cn(
-                              "grid gap-2 h-full",
+                              "grid gap-2 h-full auto-rows-fr",
                               selectedImage.inputImages.length === 2 ? "grid-cols-1" :
                               selectedImage.inputImages.length <= 4 ? "grid-cols-2" :
-                              selectedImage.inputImages.length <= 6 ? "grid-cols-2 grid-rows-3" :
+                              selectedImage.inputImages.length <= 6 ? "grid-cols-2" :
                               "grid-cols-3"
                             )}>
                               {selectedImage.inputImages.map((sourceUrl, index) => (
@@ -1124,22 +1103,17 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
                                     setSelectedImage(sourceImage);
                                   }}
                                 >
-                                  <img
-                                    src={sourceUrl}
-                                    alt={`Source ${index + 1}`}
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => {
-                                      const target = e.currentTarget
-                                      target.style.display = 'none'
-                                      const parent = target.parentElement
-                                      if (parent && !parent.querySelector('.source-error')) {
-                                        const errorDiv = document.createElement('div')
-                                        errorDiv.className = 'source-error w-full h-full bg-red-900/20 flex items-center justify-center text-red-400'
-                                        errorDiv.innerHTML = '<div class="text-center"><div>⚠️</div><div class="text-xs">Failed</div></div>'
-                                        parent.appendChild(errorDiv)
-                                      }
-                                    }}
-                                  />
+                                  <div className="relative w-full h-full">
+                                    <SafeImage
+                                      src={sourceUrl}
+                                      imageId={`source-${selectedImage.id}-${index}`}
+                                      alt={`Source ${index + 1}`}
+                                      className="w-full h-full object-cover"
+                                      showLoadingState={true}
+                                      showErrorState={true}
+                                      enableRetry={true}
+                                    />
+                                  </div>
                                   <div className="absolute top-1.5 left-1.5 bg-black/70 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-medium shadow-sm">
                                     {index + 1}
                                   </div>
@@ -1213,69 +1187,14 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
                               }
                             }}
                           >
-                            <img
+                            <SafeImage
                               src={findOriginalImage(selectedImage.originalImageId)!.url}
+                              imageId={selectedImage.originalImageId}
                               alt="Original"
                               className="w-full h-full object-contain transition-transform duration-200 group-hover:scale-[1.02]"
-                              onError={(e) => {
-                                const target = e.currentTarget
-                                const originalImage = findOriginalImage(selectedImage.originalImageId)
-                                const errorEvent = e.nativeEvent as ErrorEvent
-
-                                const errorDetails = {
-                                  url: originalImage?.url,
-                                  originalImageId: selectedImage.originalImageId,
-                                  context: 'modal-comparison-original',
-                                  errorType: errorEvent?.type || 'unknown',
-                                  errorMessage: errorEvent?.message || 'No error message',
-                                  targetSrc: target.src,
-                                  targetComplete: target.complete,
-                                  targetNaturalWidth: target.naturalWidth,
-                                  targetNaturalHeight: target.naturalHeight,
-                                  timestamp: new Date().toISOString()
-                                }
-
-                                console.error('[ImageGallery Modal] Original image failed to load:', errorDetails)
-
-                                if (target.dataset.errorHandled) return
-                                target.dataset.errorHandled = 'true'
-
-                                // Try retry once
-                                if (!target.dataset.retryAttempted && originalImage?.url) {
-                                  target.dataset.retryAttempted = 'true'
-                                  setTimeout(() => {
-                                    target.src = originalImage.url + '?retry=' + Date.now()
-                                  }, 1000)
-                                  return
-                                }
-
-                                target.style.display = 'none'
-
-                                const parent = target.parentElement
-                                if (parent && !parent.querySelector('.comparison-error-indicator')) {
-                                  const errorDiv = document.createElement('div')
-                                  errorDiv.className = 'comparison-error-indicator w-full h-full flex items-center justify-center bg-[#1A1A1A] border border-red-500/30 cursor-pointer hover:border-red-500/50 transition-colors'
-                                  errorDiv.innerHTML = `
-                                    <div class="text-center p-4">
-                                      <div class="text-red-400 mb-2">⚠️</div>
-                                      <p class="text-xs text-red-400">Original unavailable</p>
-                                      <p class="text-xs text-gray-500 mt-1">Click to retry</p>
-                                    </div>
-                                  `
-
-                                  errorDiv.addEventListener('click', () => {
-                                    if (originalImage?.url) {
-                                      errorDiv.remove()
-                                      target.style.display = 'block'
-                                      target.dataset.errorHandled = ''
-                                      target.dataset.retryAttempted = ''
-                                      target.src = originalImage.url + '?manual_retry=' + Date.now()
-                                    }
-                                  })
-
-                                  parent.appendChild(errorDiv)
-                                }
-                              }}
+                              showLoadingState={true}
+                              showErrorState={true}
+                              enableRetry={true}
                             />
                             <div className="absolute top-2 left-2 bg-black/80 text-white px-3 py-1.5 rounded-md text-sm font-medium shadow-lg pointer-events-none border border-blue-500/30">
                               Original
@@ -1317,66 +1236,14 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
                               setSelectedImage(cleanEditedImage);
                             }}
                           >
-                            <img
+                            <SafeImage
                               src={selectedImage.url}
+                              imageId={selectedImage.id}
                               alt="Edited"
                               className="w-full h-full object-contain transition-transform duration-200 group-hover:scale-[1.02]"
-                              onError={(e) => {
-                                const target = e.currentTarget
-                                const errorEvent = e.nativeEvent as ErrorEvent
-
-                                const errorDetails = {
-                                  url: selectedImage.url,
-                                  id: selectedImage.id,
-                                  context: 'modal-comparison-edited',
-                                  errorType: errorEvent?.type || 'unknown',
-                                  errorMessage: errorEvent?.message || 'No error message',
-                                  targetSrc: target.src,
-                                  targetComplete: target.complete,
-                                  targetNaturalWidth: target.naturalWidth,
-                                  targetNaturalHeight: target.naturalHeight,
-                                  timestamp: new Date().toISOString()
-                                }
-
-                                console.error('[ImageGallery Modal] Edited image failed to load:', errorDetails)
-
-                                if (target.dataset.errorHandled) return
-                                target.dataset.errorHandled = 'true'
-
-                                // Try retry once
-                                if (!target.dataset.retryAttempted) {
-                                  target.dataset.retryAttempted = 'true'
-                                  setTimeout(() => {
-                                    target.src = selectedImage.url + '?retry=' + Date.now()
-                                  }, 1000)
-                                  return
-                                }
-
-                                target.style.display = 'none'
-
-                                const parent = target.parentElement
-                                if (parent && !parent.querySelector('.comparison-error-indicator')) {
-                                  const errorDiv = document.createElement('div')
-                                  errorDiv.className = 'comparison-error-indicator w-full h-full flex items-center justify-center bg-[#1A1A1A] border border-red-500/30 cursor-pointer hover:border-red-500/50 transition-colors'
-                                  errorDiv.innerHTML = `
-                                    <div class="text-center p-4">
-                                      <div class="text-red-400 mb-2">⚠️</div>
-                                      <p class="text-xs text-red-400">Edited unavailable</p>
-                                      <p class="text-xs text-gray-500 mt-1">Click to retry</p>
-                                    </div>
-                                  `
-
-                                  errorDiv.addEventListener('click', () => {
-                                    errorDiv.remove()
-                                    target.style.display = 'block'
-                                    target.dataset.errorHandled = ''
-                                    target.dataset.retryAttempted = ''
-                                    target.src = selectedImage.url + '?manual_retry=' + Date.now()
-                                  })
-
-                                  parent.appendChild(errorDiv)
-                                }
-                              }}
+                              showLoadingState={true}
+                              showErrorState={true}
+                              enableRetry={true}
                             />
                             <div className="absolute top-2 left-2 bg-black/80 text-white px-3 py-1.5 rounded-md text-sm font-medium shadow-lg pointer-events-none border border-purple-500/30">
                               Edited
@@ -1410,77 +1277,17 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
                 // Single image view
                 <div className="flex-1 min-h-0 p-2">
                   <div className="h-full bg-[#0A0A0A] rounded-lg flex items-center justify-center p-2">
-                    <img
+                    <SafeImage
                       src={selectedImage.url}
+                      imageId={selectedImage.id}
                       alt={selectedImage.prompt}
                       className={cn(
                         "max-w-full max-h-full object-contain",
                         isFullScreen ? "max-h-[calc(100vh-12rem)]" : "max-h-[calc(85vh-14rem)]"
                       )}
-                      onError={(e) => {
-                        const target = e.currentTarget
-                        const errorEvent = e.nativeEvent as ErrorEvent
-
-                        const errorDetails = {
-                          url: selectedImage.url,
-                          id: selectedImage.id,
-                          context: 'modal-single-view',
-                          errorType: errorEvent?.type || 'unknown',
-                          errorMessage: errorEvent?.message || 'No error message',
-                          targetSrc: target.src,
-                          targetComplete: target.complete,
-                          targetNaturalWidth: target.naturalWidth,
-                          targetNaturalHeight: target.naturalHeight,
-                          timestamp: new Date().toISOString()
-                        }
-
-                        console.error('[ImageGallery Modal] Image failed to load:', errorDetails)
-
-                        if (target.dataset.errorHandled) return
-                        target.dataset.errorHandled = 'true'
-
-                        // Try retry once
-                        if (!target.dataset.retryAttempted) {
-                          target.dataset.retryAttempted = 'true'
-                          setTimeout(() => {
-                            target.src = selectedImage.url + '?retry=' + Date.now()
-                          }, 1000)
-                          return
-                        }
-
-                        // Replace with error message
-                        target.style.display = 'none'
-                        const parent = target.parentElement
-                        if (parent && !parent.querySelector('.modal-error-indicator')) {
-                          const isReplicateUrl = selectedImage.url?.includes('replicate.delivery') || false
-                          const isBlobUrl = selectedImage.url?.includes('blob.vercel-storage.com') || false
-
-                          const errorDiv = document.createElement('div')
-                          errorDiv.className = 'modal-error-indicator flex items-center justify-center text-center p-8 cursor-pointer hover:bg-[#2A2A2A] transition-colors rounded-lg'
-                          errorDiv.innerHTML = `
-                            <div>
-                              <div class="text-red-400 text-4xl mb-4">⚠️</div>
-                              <p class="text-red-400 font-medium mb-2">Image unavailable</p>
-                              <p class="text-gray-500 text-sm mb-2">
-                                ${isReplicateUrl ? 'Replicate URL expired (24h limit)' :
-                                  isBlobUrl ? 'Blob storage URL may be invalid' :
-                                  'The image URL may have expired or be inaccessible'}
-                              </p>
-                              <p class="text-blue-400 text-sm">Click to retry loading</p>
-                            </div>
-                          `
-
-                          errorDiv.addEventListener('click', () => {
-                            errorDiv.remove()
-                            target.style.display = 'block'
-                            target.dataset.errorHandled = ''
-                            target.dataset.retryAttempted = ''
-                            target.src = selectedImage.url + '?manual_retry=' + Date.now()
-                          })
-
-                          parent.appendChild(errorDiv)
-                        }
-                      }}
+                      showLoadingState={true}
+                      showErrorState={true}
+                      enableRetry={true}
                     />
                   </div>
                 </div>
@@ -1607,7 +1414,17 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
           isOpen={!!editingImage}
           onClose={() => setEditingImage(null)}
           onEditComplete={(editedImage) => {
-            const updatedImages = [...images, editedImage]
+            // First, remove any placeholder from the progress store
+            const hasPlaceholder = generatingImages.some(g => g.imageId === editedImage.id)
+            if (hasPlaceholder) {
+              removeProgress(editedImage.id)
+            }
+            
+            // Add edited image to the beginning (appears at top where placeholder was)
+            // Keep original image in its position for comparison
+            const updatedImages = [editedImage, ...images]
+            console.log('[ImageGallery] Added edited image to beginning, original image preserved')
+            
             setImages(updatedImages)
             onImagesChange?.(updatedImages)
             setEditingImage(null)
@@ -1624,7 +1441,17 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
           isOpen={!!upscalingImage}
           onClose={() => setUpscalingImage(null)}
           onUpscaleComplete={(upscaledImage) => {
-            const updatedImages = [...images, upscaledImage]
+            // First, remove any placeholder from the progress store
+            const hasPlaceholder = generatingImages.some(g => g.imageId === upscaledImage.id)
+            if (hasPlaceholder) {
+              removeProgress(upscaledImage.id)
+            }
+            
+            // Add upscaled image to the beginning (appears at top where placeholder was)
+            // Keep original image in its position for comparison
+            const updatedImages = [upscaledImage, ...images]
+            console.log('[ImageGallery] Added upscaled image to beginning, original image preserved')
+            
             setImages(updatedImages)
             onImagesChange?.(updatedImages)
             setUpscalingImage(null)
@@ -1644,7 +1471,17 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
             setSelectionMode(false)
           }}
           onEditComplete={(editedImage) => {
+            // First, remove any placeholder from the progress store
+            const hasPlaceholder = generatingImages.some(g => g.imageId === editedImage.id)
+            if (hasPlaceholder) {
+              removeProgress(editedImage.id)
+            }
+            
+            // For multi-image editing, this creates a new composite image, so add to end
+            // Multi-image edit doesn't replace a single original, it creates something new
             const updatedImages = [...images, editedImage]
+            console.log('[ImageGallery] Added multi-edit result to end')
+            
             setImages(updatedImages)
             onImagesChange?.(updatedImages)
             setShowMultiEditModal(false)
@@ -1666,7 +1503,17 @@ export function ImageGallery({ images: propImages, onImagesChange, onAnimateImag
             setSelectionMode(false)
           }}
           onComposeComplete={(composedImage) => {
+            // First, remove any placeholder from the progress store
+            const hasPlaceholder = generatingImages.some(g => g.imageId === composedImage.id)
+            if (hasPlaceholder) {
+              removeProgress(composedImage.id)
+            }
+            
+            // For multi-image composition, this creates a new composite image, so add to end
+            // Multi-image compose doesn't replace a single original, it creates something new
             const updatedImages = [...images, composedImage]
+            console.log('[ImageGallery] Added multi-compose result to end')
+            
             setImages(updatedImages)
             onImagesChange?.(updatedImages)
             setShowMultiComposeModal(false)
