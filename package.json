@@ -40,6 +40,8 @@
     "db:check": "node scripts/database/check-database.mjs",
     "db:check-fixed": "node scripts/database/check-database-fixed.mjs",
     "db:check-optimized": "node scripts/database/check-database-optimized.mjs",
+    "db:check-safe": "node scripts/database/check-database-safe.mjs",
+    "db:check-quick": "node scripts/database/check-database-quick.mjs",
     "db:setup-videos": "node scripts/database/create-videos-table.mjs",
     "db:migrate": "node scripts/database/run-videos-migration.js",
     "db:migrate:thumbnails": "node scripts/database/apply-image-thumbnails-migration.js",
