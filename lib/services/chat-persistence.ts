@@ -250,6 +250,62 @@ export async function getChat(chatId: string): Promise<{
   }
 }
 
+// Ensure a chat exists in the database (handles local chat IDs)
+export async function ensureChatExists(chatId: string, initialModel?: string): Promise<string> {
+  if (!isPersistenceConfigured() || !supabase) {
+    return chatId // Return as-is if persistence not configured
+  }
+
+  // Check if this is a local chat ID
+  if (chatId.startsWith('local-')) {
+    console.log('[ENSURE CHAT EXISTS] Converting local chat ID to database chat:', chatId)
+    
+    try {
+      // Create a new chat in the database
+      const { data, error } = await supabase
+        .from('chats')
+        .insert({
+          title: 'New Chat',
+          model: initialModel || 'gemini-2.0-flash',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error('[ENSURE CHAT EXISTS] Error creating chat:', error)
+        throw error
+      }
+
+      console.log('[ENSURE CHAT EXISTS] Created new chat with ID:', data.id)
+      return data.id
+    } catch (error) {
+      console.error('[ENSURE CHAT EXISTS] Failed to create chat:', error)
+      throw error
+    }
+  }
+
+  // For non-local IDs, verify the chat exists
+  try {
+    const { data, error } = await supabase
+      .from('chats')
+      .select('id')
+      .eq('id', chatId)
+      .single()
+
+    if (error || !data) {
+      console.error('[ENSURE CHAT EXISTS] Chat not found:', chatId)
+      throw new Error('Chat not found')
+    }
+
+    return chatId
+  } catch (error) {
+    console.error('[ENSURE CHAT EXISTS] Error verifying chat:', error)
+    throw error
+  }
+}
+
 // Add a message to a chat
 export async function addMessage(
   chatId: string,
@@ -262,10 +318,13 @@ export async function addMessage(
   }
 
   try {
+    // Ensure the chat exists and get the proper ID
+    const properChatId = await ensureChatExists(chatId)
+    
     const { data, error } = await supabase
       .from('messages')
       .insert({
-        chat_id: chatId,
+        chat_id: properChatId,
         role,
         content,
         attachments: attachments || [],
@@ -279,7 +338,7 @@ export async function addMessage(
     await supabase
       .from('chats')
       .update({ updated_at: new Date().toISOString() })
-      .eq('id', chatId)
+      .eq('id', properChatId)
 
     return data
   } catch (error: any) {
@@ -407,6 +466,12 @@ export async function saveImage(
   })
 
   try {
+    // Ensure the chat exists and get the proper ID
+    let properChatId = chatId
+    if (chatId) {
+      properChatId = await ensureChatExists(chatId)
+    }
+    
     // Upload to blob storage first
     const extension = image.isUploaded ? 'png' : 'png' // Keep as PNG for uploaded images
     const filename = `${image.id}-${Date.now()}.${extension}`
@@ -417,7 +482,7 @@ export async function saveImage(
 
     // Save to database
     const insertData: any = {
-      chat_id: chatId,
+      chat_id: properChatId,
       message_id: messageId,
       url: blobUrl,
       prompt: image.prompt,
@@ -878,6 +943,12 @@ export async function saveVideo(
   })
 
   try {
+    // Ensure the chat exists and get the proper ID
+    let properChatId = chatId
+    if (chatId) {
+      properChatId = await ensureChatExists(chatId)
+    }
+    
     // Calculate final elapsed time if completed
     let finalElapsedTime: number | undefined
     if (video.status === 'completed' && video.createdAt && video.completedAt) {
@@ -889,7 +960,7 @@ export async function saveVideo(
 
     // Save to database
     const insertData = {
-      chat_id: chatId,
+      chat_id: properChatId,
       message_id: messageId,
       url: video.url,
       thumbnail_url: video.thumbnailUrl,

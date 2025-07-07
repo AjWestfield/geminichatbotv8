@@ -5,6 +5,39 @@ All notable changes to GeminiChatbot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.1.0] - 2025-07-07
+
+### 🔧 Critical Bug Fixes
+
+This patch release fixes several critical issues discovered after the v8.0.0 release.
+
+### Fixed
+- **UUID Validation Errors** - Fixed "invalid input syntax for type uuid" errors
+  - Added `ensureChatExists()` function to convert local chat IDs to proper UUIDs
+  - Updated all persistence functions to handle local chat IDs gracefully
+  - Images and messages now save correctly for new chats
+  
+- **TikTok Download IP Blocking** - Enhanced TikTok download with better error handling
+  - Added automatic yt-dlp updates before downloads
+  - Added proxy support via HTTP_PROXY/HTTPS_PROXY environment variables
+  - Improved error messages with actionable solutions
+  - Created update script: `npm run update:yt-dlp`
+  
+- **Image Source Relations RLS** - Fixed Row Level Security policy violations
+  - Updated RLS policies to use separate policies per operation
+  - Multi-image edits now save relationships correctly
+
+### Added
+- `ensureChatExists()` function for automatic chat ID conversion
+- `scripts/update-yt-dlp.js` for updating the download tool
+- Proxy support for TikTok downloads
+- Better error messages throughout the application
+
+### Improved
+- Enhanced error handling with user-friendly messages
+- Better logging for debugging UUID conversion
+- Automatic yt-dlp updates for TikTok compatibility
+
 ## [8.0.0] - 2025-07-07
 
 ### 🎉 Major Release - Stability and Performance

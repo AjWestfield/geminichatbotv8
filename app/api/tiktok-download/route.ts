@@ -35,10 +35,23 @@ export async function POST(request: NextRequest) {
     console.log('[TikTok Download] Starting download for URL:', url)
 
     // Use yt-dlp to download TikTok video
-    // yt-dlp works with TikTok URLs as well
-    const command = `yt-dlp -f "best[ext=mp4]/best" -o "${tempVideoPath}" --no-playlist --quiet --no-warnings "${url}"`
+    // Add proxy support if environment variable is set
+    const proxyOption = process.env.HTTP_PROXY || process.env.HTTPS_PROXY 
+      ? `--proxy "${process.env.HTTP_PROXY || process.env.HTTPS_PROXY}"` 
+      : '';
     
-    console.log('[TikTok Download] Executing command:', command)
+    // Update yt-dlp before downloading to ensure we have the latest TikTok fixes
+    const updateCommand = 'yt-dlp -U || true' // Try to update but don't fail if it can't
+    try {
+      console.log('[TikTok Download] Updating yt-dlp...')
+      await execAsync(updateCommand, { timeout: 30000 })
+    } catch (error) {
+      console.log('[TikTok Download] Could not update yt-dlp:', error)
+    }
+    
+    const command = `yt-dlp -f "best[ext=mp4]/best" -o "${tempVideoPath}" --no-playlist --quiet --no-warnings ${proxyOption} "${url}"`
+    
+    console.log('[TikTok Download] Executing command:', command.replace(/--proxy "[^"]*"/, '--proxy "***"')) // Hide proxy in logs
     
     try {
       await execAsync(command, { 
@@ -48,12 +61,20 @@ export async function POST(request: NextRequest) {
     } catch (error: any) {
       console.error('[TikTok Download] yt-dlp error:', error)
       
-      // Check if it's a private video error
+      // Check for specific error types
+      if (error.stderr?.includes('Your IP address is blocked')) {
+        throw new Error('TikTok has blocked downloads from this server. This is a common issue with cloud servers. Try using the browser extension or ask the administrator to configure a proxy.')
+      }
+      
       if (error.message?.includes('private') || error.message?.includes('login required')) {
         throw new Error('This TikTok video is private or requires authentication')
       }
       
-      throw new Error(`Failed to download video: ${error.message || 'Unknown error'}`)
+      if (error.stderr?.includes('Unable to extract')) {
+        throw new Error('Unable to extract video. TikTok may have changed their format. Please try updating yt-dlp or report this issue.')
+      }
+      
+      throw new Error(`Failed to download video: ${error.stderr || error.message || 'Unknown error'}`)
     }
 
     // Verify the file was created and has content

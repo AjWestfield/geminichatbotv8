@@ -180,8 +180,23 @@ export async function downloadTikTokVideo(
                   resolve(result)
                   return
                 } else if (data.status === 'error') {
-                  onProgress?.(data)
-                  reject(new Error(data.error || 'Download failed'))
+                  // Enhanced error messages for common issues
+                  let errorMessage = data.error || 'Download failed'
+                  
+                  if (errorMessage.includes('IP address is blocked')) {
+                    errorMessage = '🚫 TikTok has blocked downloads from this server. This is a common issue with cloud servers. Try:\n• Using a browser extension\n• Asking your administrator to configure a proxy\n• Downloading on your local device'
+                  } else if (errorMessage.includes('private') || errorMessage.includes('login required')) {
+                    errorMessage = '🔒 This TikTok video is private or requires login'
+                  } else if (errorMessage.includes('Unable to extract')) {
+                    errorMessage = '⚠️ Unable to download video. TikTok may have changed their format. Try updating the app'
+                  }
+                  
+                  onProgress?.({
+                    ...data,
+                    error: errorMessage,
+                    message: errorMessage
+                  })
+                  reject(new Error(errorMessage))
                   return
                 } else {
                   // Progress update

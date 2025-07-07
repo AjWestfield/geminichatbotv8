@@ -125,9 +125,25 @@ CREATE INDEX idx_image_source_relations_source ON public.image_source_relations(
 
 ALTER TABLE public.image_source_relations ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow all operations on image_source_relations" ON public.image_source_relations
-    FOR ALL TO authenticated, anon
+-- Drop any existing policies first
+DROP POLICY IF EXISTS "Allow all operations on image_source_relations" ON public.image_source_relations;
+
+-- Create separate policies for different operations to avoid RLS conflicts
+CREATE POLICY "Enable insert for all users on image_source_relations" ON public.image_source_relations
+    FOR INSERT TO authenticated, anon, service_role
+    WITH CHECK (true);
+
+CREATE POLICY "Enable select for all users on image_source_relations" ON public.image_source_relations
+    FOR SELECT TO authenticated, anon, service_role
+    USING (true);
+
+CREATE POLICY "Enable update for all users on image_source_relations" ON public.image_source_relations
+    FOR UPDATE TO authenticated, anon, service_role
     USING (true) WITH CHECK (true);
+
+CREATE POLICY "Enable delete for all users on image_source_relations" ON public.image_source_relations
+    FOR DELETE TO authenticated, anon, service_role
+    USING (true);
 
 GRANT ALL ON public.image_source_relations TO authenticated;
 GRANT ALL ON public.image_source_relations TO anon;

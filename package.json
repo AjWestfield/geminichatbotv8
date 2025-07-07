@@ -1,6 +1,6 @@
 {
   "name": "geminichatbotv8",
-  "version": "8.0.0",
+  "version": "8.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -54,7 +54,8 @@
     "dev:fix": "node fix-next15-webpack.js && npm run dev:clean",
     "build:clean": "rm -rf .next && next build",
     "fix:webpack": "node scripts/fix-webpack-chunks.js",
-    "fix:webpack:full": "node scripts/fix-webpack-chunks.js --reinstall"
+    "fix:webpack:full": "node scripts/fix-webpack-chunks.js --reinstall",
+    "update:yt-dlp": "node scripts/update-yt-dlp.js"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",
