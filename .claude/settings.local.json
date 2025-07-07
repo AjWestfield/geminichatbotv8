@@ -78,7 +78,11 @@
       "Bash(open test-video-modal.html)",
       "Bash(./verify-video-proxy.mjs)",
       "Bash(./fix-video-playback-final.mjs)",
-      "Bash(./test-video-playback-fix.mjs)"
+      "Bash(./test-video-playback-fix.mjs)",
+      "Bash(gh repo create:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)",
+      "Bash(git filter-branch:*)"
     ],
     "deny": []
   }
