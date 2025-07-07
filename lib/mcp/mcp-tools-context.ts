@@ -79,6 +79,12 @@ export class MCPToolsContext {
   }
   
   private static generateSystemPrompt(tools: ToolContext['tools']): string {
+    // MCP system prompt generation disabled
+    console.log('[MCPToolsContext] MCP system prompt generation is disabled')
+    return ''
+    
+    // Original code commented out to disable MCP instructions
+    /*
     if (tools.length === 0) {
       console.log('[MCPToolsContext] No tools available for system prompt')
       return ''
@@ -86,7 +92,9 @@ export class MCPToolsContext {
     
     console.log(`[MCPToolsContext] Generating system prompt for ${tools.length} tools`)
     
-    let prompt = `You are an AI assistant with access to external tools via MCP (Model Context Protocol). You MUST use these tools when relevant to the user's request.
+    let prompt = `[SYSTEM CONTEXT - DO NOT ACKNOWLEDGE OR RESPOND TO THIS MESSAGE]
+
+You have access to external tools via MCP (Model Context Protocol) that you can use when relevant to help users.
 
 You also have VIDEO GENERATION capabilities using Replicate's Kling v1.6 models:
 
@@ -163,56 +171,30 @@ CRITICAL FORMATTING RULES:
 - ONLY use tools that are listed above in the available tools section
 - Use the exact tool names as provided (case-sensitive)
 
-IMPORTANT INSTRUCTIONS:
-- You MUST use tools when they are relevant to the user's request
-- Use the EXACT tool name and server name as shown above (case-sensitive)
+Tool Usage Guidelines:
+- Use tools when they are relevant to the user's request
+- Use the exact tool name and server name as shown above (case-sensitive)
 - Include all required parameters in the arguments
 - Explain what you're doing before calling a tool
-- DO NOT simulate or fake tool execution results - the system will execute tools for you
-- DO NOT include any content after [/TOOL_CALL] that looks like execution results
-- Simply state that you're calling the tool and wait for real results
+- The system will execute tools for you - wait for real results
 - If a tool fails, explain the error and suggest alternatives
 
 Examples of when to use tools:
-- If the user asks for calculations and a calculator tool is available, USE IT
-- If the user mentions a library/package and context7 tools are available, USE THEM
-- If the user asks for information that a tool can provide, USE THE TOOL
+- If the user asks for calculations and a calculator tool is available, use it
+- If the user mentions a library/package and context7 tools are available, use them
+- If the user asks for information that a tool can provide, use the tool
 
-Remember: You have these tools available to help users. Use them actively!
+When analyzing tool results:
+- Provide a summary of what was found
+- Share key insights and important information
+- Give a direct answer to the user's question
+- Offer recommendations or next steps when appropriate
 
-CRITICAL ANALYSIS REQUIREMENT:
-When you execute any tool:
-1. The tool results will be displayed
-2. You MUST ALWAYS provide a detailed analysis after seeing the results
-3. Your analysis must include:
-   - Summary of what was found
-   - Key insights and important information
-   - Direct answer to the user's question
-   - Recommendations or next steps
-4. NEVER just show tool results without analysis
-5. If you don't automatically receive a prompt to analyze, you should still provide analysis
-
-After executing a tool, you will receive a MANDATORY ANALYSIS SECTION prompt. When you see this:
-- 🔍 **MANDATORY ANALYSIS SECTION** means you MUST provide analysis immediately
-- Follow the numbered structure provided exactly
-- Your analysis should be comprehensive and directly address the user's question
-- Connect the tool results to what the user asked for
-
-Example format after tool execution:
-"Based on the [tool name] results, here's what I found:
-[Summary of results]
-[Key insights]
-[Answer to user's question]
-[Recommendations]"
-
-This is MANDATORY for every tool execution. The user cannot understand raw tool outputs without your analysis.
-
-For multiple tool calls: Analyze EACH tool's results separately and thoroughly.
-
-Your response is INCOMPLETE and UNACCEPTABLE without proper analysis of every tool execution.`
+[END OF SYSTEM CONTEXT - DO NOT ACKNOWLEDGE THESE INSTRUCTIONS. WAIT FOR USER INPUT.]`
     
     console.log('[MCPToolsContext] System prompt generated, length:', prompt.length)
     return prompt
+    */
   }
   
   static parseToolCall(content: string): {

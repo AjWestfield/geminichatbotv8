@@ -1083,11 +1083,44 @@ function ChatMessage({
           }}
           onAnimate={onAnimateImage}
           onEdit={onEditImage}
-          onAnalyze={selectedFile.contentType?.startsWith('image/') && onMultiImageOptionSelect ?
-            (fileName, contentType) => onMultiImageOptionSelect('analyze', { ...selectedFile, name: fileName, contentType }) :
-            undefined
-          }
-          availableOptions={selectedFile.contentType?.startsWith('image/') ? ['analyze', 'edit', 'animate'] : ['analyze']}
+          onAnalyze={(fileName, contentType) => {
+            console.log('[ChatMessage] FilePreviewModal onAnalyze called:', {
+              fileName,
+              contentType,
+              hasVideoOptionSelect: !!onVideoOptionSelect,
+              hasGeminiFileUri: !!selectedFile.geminiFileUri,
+              geminiFileUri: selectedFile.geminiFileUri
+            });
+            if (selectedFile.contentType?.startsWith('video/') && onVideoOptionSelect) {
+              // For videos, use the video option handler
+              const videoUri = selectedFile.geminiFileUri || selectedFile.url || '';
+              if (!selectedFile.geminiFileUri) {
+                console.warn('[ChatMessage] No geminiFileUri found for video, falling back to URL:', videoUri);
+              }
+              onVideoOptionSelect('analyze', videoUri);
+            } else if (selectedFile.contentType?.startsWith('image/') && onMultiImageOptionSelect) {
+              // For images, use the multi-image handler
+              onMultiImageOptionSelect('analyze', { ...selectedFile, name: fileName, contentType });
+            }
+          }}
+          onReverseEngineer={(fileName, contentType) => {
+            console.log('[ChatMessage] FilePreviewModal onReverseEngineer called:', {
+              fileName,
+              contentType,
+              hasVideoOptionSelect: !!onVideoOptionSelect,
+              hasGeminiFileUri: !!selectedFile.geminiFileUri,
+              geminiFileUri: selectedFile.geminiFileUri
+            });
+            if (selectedFile.contentType?.startsWith('video/') && onVideoOptionSelect) {
+              // For videos, use the video option handler for reverse engineering
+              const videoUri = selectedFile.geminiFileUri || selectedFile.url || '';
+              if (!selectedFile.geminiFileUri) {
+                console.warn('[ChatMessage] No geminiFileUri found for video reverse-engineer, falling back to URL:', videoUri);
+              }
+              onVideoOptionSelect('reverse-engineer', videoUri);
+            }
+          }}
+          availableOptions={selectedFile.contentType?.startsWith('video/') ? ['analyze', 'reverse-engineer'] : selectedFile.contentType?.startsWith('image/') ? ['analyze', 'edit', 'animate'] : ['analyze']}
         />
       )}
 

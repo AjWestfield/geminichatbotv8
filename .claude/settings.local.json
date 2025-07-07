@@ -70,7 +70,15 @@
       "Bash(yt-dlp:*)",
       "Bash(pip3 install:*)",
       "Bash(brew upgrade:*)",
-      "Bash(brew link:*)"
+      "Bash(brew link:*)",
+      "Bash(git checkout:*)",
+      "Bash(cat:*)",
+      "Bash(diff:*)",
+      "Bash(./verify-url-fix.sh:*)",
+      "Bash(open test-video-modal.html)",
+      "Bash(./verify-video-proxy.mjs)",
+      "Bash(./fix-video-playback-final.mjs)",
+      "Bash(./test-video-playback-fix.mjs)"
     ],
     "deny": []
   }

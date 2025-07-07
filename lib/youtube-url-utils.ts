@@ -218,6 +218,13 @@ export function createFileFromYouTubeDownload(downloadResult: any, videoTitle: s
   // Note: This is a mock File object since we can't create a real File from the server response
   const fileName = `${videoTitle.replace(/[^a-zA-Z0-9\s-]/g, '').trim()}.mp4`
   
+  console.log('[YouTube Download] Creating file from download result:', {
+    fileName,
+    geminiUri: downloadResult.file?.uri,
+    mimeType: downloadResult.file?.mimeType,
+    hasGeminiFile: !!downloadResult.file
+  })
+  
   // Create a dummy blob with minimal content to satisfy file size requirements
   // The actual content is stored in Gemini and referenced via the geminiFile property
   const dummyContent = new Blob(['placeholder'], { type: downloadResult.file.mimeType || 'video/mp4' })
@@ -252,6 +259,14 @@ export function createFileFromYouTubeDownload(downloadResult: any, videoTitle: s
   // Add upload timestamp for tracking freshness
   Object.defineProperty(mockFile, 'uploadTimestamp', {
     value: Date.now(),
+    writable: false,
+    enumerable: true,
+    configurable: true
+  })
+
+  // Add flag to prevent auto-analysis
+  Object.defineProperty(mockFile, 'skipAutoAnalysis', {
+    value: true,
     writable: false,
     enumerable: true,
     configurable: true

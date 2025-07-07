@@ -326,14 +326,16 @@ export async function POST(req: Request) {
         let isTimeout = false
         
         if (error.name === 'AbortError' || error.message?.includes('timeout')) {
-          errorMessage = 'Image generation timed out. This can happen with complex prompts or when the service is busy. Please try again.'
+          errorMessage = '⏱️ Image generation is taking longer than expected. This can happen with complex prompts or during busy periods. The system will automatically retry. You can also try:\n• Using a simpler prompt\n• Selecting a faster model like WaveSpeed AI\n• Trying again in a few moments'
           isTimeout = true
         } else if (error.cause?.code === 'UND_ERR_SOCKET' || error.cause?.code === 'ECONNRESET') {
-          errorMessage = 'Connection to image service was interrupted. Please try again.'
+          errorMessage = '🔌 Connection interrupted during image generation. The system will automatically retry. If this persists, please refresh the page.'
         } else if (error.message?.includes('fetch failed')) {
-          errorMessage = 'Unable to connect to image generation service. Please check your connection and try again.'
+          errorMessage = '🌐 Cannot reach the image generation service. Please check:\n• Your internet connection is stable\n• Any VPN or firewall settings\n• Try refreshing the page'
+        } else if (error.message?.includes('API key')) {
+          errorMessage = '🔑 ' + error.message
         } else if (error instanceof Error) {
-          errorMessage = error.message
+          errorMessage = '❌ ' + error.message
         }
 
         // Store error data to notify user
@@ -786,9 +788,9 @@ When information might be time-sensitive, clearly indicate the publication date 
       console.log(`[Chat API] Using Gemini model: ${model}`)
       const chat = genAI.getGenerativeModel({ model: model })
 
-      // Get available MCP tools
-      const toolsContext = await MCPToolsContext.getAvailableTools()
-      console.log('[Chat API] Available MCP tools for Gemini:', toolsContext.tools.length)
+      // MCP tools disabled - returning empty context
+      const toolsContext = { tools: [], systemPrompt: '' }
+      console.log('[Chat API] MCP tools disabled')
 
       // Check token count before proceeding
       const tokenLimit = GEMINI_TOKEN_LIMITS[model as keyof typeof GEMINI_TOKEN_LIMITS] || 200000
@@ -831,12 +833,12 @@ When information might be time-sensitive, clearly indicate the publication date 
         console.log(`[Chat API] Processing ${multipleFiles.length} files`)
         
         // Separate files that need validation from those that should skip
-        const filesToValidate = multipleFiles.filter(f => !f.skipValidation)
-        const filesToSkip = multipleFiles.filter(f => f.skipValidation)
+        const filesToValidate = multipleFiles.filter((f: any) => !f.skipValidation)
+        const filesToSkip = multipleFiles.filter((f: any) => f.skipValidation)
         
         if (filesToSkip.length > 0) {
           console.log(`[Chat API] Skipping validation for ${filesToSkip.length} files (freshly downloaded)`)
-          filesToSkip.forEach(file => {
+          filesToSkip.forEach((file: any) => {
             console.log(`[Chat API] - Skipping validation for: ${file.name}`)
           })
         }
@@ -857,12 +859,12 @@ When information might be time-sensitive, clearly indicate the publication date 
         
         if (invalidFiles.length > 0) {
           console.warn(`[Chat API] ${invalidFiles.length} files are invalid/expired:`)
-          invalidFiles.forEach(file => {
+          invalidFiles.forEach((file: any) => {
             console.warn(`[Chat API] - ${file.name}: ${file.error}`)
           })
           
           // Create user-friendly error message
-          const expiredFileNames = invalidFiles.map(f => f.name || 'Unnamed file').join(', ')
+          const expiredFileNames = invalidFiles.map((f: any) => f.name || 'Unnamed file').join(', ')
           fileValidationError = `The following files have expired and need to be re-uploaded: ${expiredFileNames}. Files uploaded to the AI expire after 48 hours.`
         }
         

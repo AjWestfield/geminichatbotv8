@@ -4,7 +4,6 @@ import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { ContentLibraryGallery } from "./content-library-gallery"
 import { ContentUploadZone } from "./content-upload-zone"
-import { ContentPublishModal } from "./content-publish-modal"
 import { toast } from "sonner"
 import { Upload, Loader2 } from "lucide-react"
 
@@ -36,7 +35,6 @@ export function ContentLibraryTab({ chatId, onFileUpload }: ContentLibraryTabPro
   const [contentItems, setContentItems] = useState<ContentItem[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedItem, setSelectedItem] = useState<ContentItem | null>(null)
-  const [publishModalOpen, setPublishModalOpen] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({})
 
   // Load content items on mount
@@ -121,15 +119,9 @@ export function ContentLibraryTab({ chatId, onFileUpload }: ContentLibraryTabPro
 
   const handleItemClick = (item: ContentItem) => {
     setSelectedItem(item)
-    setPublishModalOpen(true)
+    // Publishing functionality has been removed
   }
 
-  const handlePublishComplete = async (platformResults: Record<string, any>) => {
-    // Refresh the item to show updated platform status
-    await loadContentItems()
-    setPublishModalOpen(false)
-    setSelectedItem(null)
-  }
 
   const handleDeleteItem = async (itemId: string) => {
     try {
@@ -196,15 +188,6 @@ export function ContentLibraryTab({ chatId, onFileUpload }: ContentLibraryTabPro
         )}
       </div>
 
-      {/* Publish Modal */}
-      {selectedItem && (
-        <ContentPublishModal
-          open={publishModalOpen}
-          onOpenChange={setPublishModalOpen}
-          contentItem={selectedItem}
-          onPublishComplete={handlePublishComplete}
-        />
-      )}
     </div>
   )
 }

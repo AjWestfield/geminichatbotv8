@@ -302,6 +302,14 @@ export function createFileFromInstagramDownload(downloadResult: any, mediaTitle:
     configurable: true
   })
 
+  // Add flag to prevent auto-analysis
+  Object.defineProperty(mockFile, 'skipAutoAnalysis', {
+    value: true,
+    writable: false,
+    enumerable: true,
+    configurable: true
+  })
+
   // Add video thumbnail if available - CRITICAL FIX
   if (downloadResult.thumbnail) {
     // Ensure the thumbnail is a valid data URL

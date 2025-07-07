@@ -59,11 +59,11 @@ export async function handleClaudeRequest(
     const toolsContext = await MCPToolsContext.getAvailableTools();
     console.log('[Claude Handler] Available tools:', toolsContext.tools.length);
     
-    // Build system prompt - use only MCP_AGENT_INSTRUCTIONS_ENHANCED to avoid duplication
-    const systemPrompt = MCP_AGENT_INSTRUCTIONS_ENHANCED;
-    
     // Get the last message to check for video generation request
     const lastMessage = messages[messages.length - 1];
+    
+    // Build system prompt - start with base instructions
+    let systemPrompt = MCP_AGENT_INSTRUCTIONS_ENHANCED;
     
     // Check if this is a video generation request
     if (lastMessage && lastMessage.role === 'user') {
@@ -72,6 +72,15 @@ export async function handleClaudeRequest(
         console.log('[Claude Handler] Detected video generation request:', videoRequest);
         // Note: The actual video generation will be handled by the streaming handler
         // which will detect the VIDEO_GENERATION_TRIGGER in the response
+      }
+      
+      // Check if message contains only social media URLs without publishing intent
+      const socialMediaUrlPattern = /https?:\/\/(www\.)?(instagram|youtube|youtu\.be|tiktok|facebook|twitter|x\.com)[^\s]*/gi;
+      const messageWithoutUrls = lastMessage.content.replace(socialMediaUrlPattern, '').trim();
+      
+      // If message is just URLs or URLs with minimal text, it's likely for download/analysis
+      if (messageWithoutUrls.length < 50 && !messageWithoutUrls.match(/\b(post|publish|share|upload)\b/i)) {
+        console.log('[Claude Handler] Detected social media URL(s) without publishing intent - download/analysis mode');
       }
     }
     

@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Fix Manual Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+        .test-step {
+            margin: 15px 0;
+            padding: 15px;
+            background: white;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .checkbox {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        .step-text {
+            flex: 1;
+        }
+        .url-box {
+            background: #fff3cd;
+            padding: 10px;
+            border-radius: 3px;
+            font-family: monospace;
+            word-break: break-all;
+            margin: 10px 0;
+            border: 1px solid #ffeaa7;
+            user-select: all;
+            cursor: copy;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .warning { background: #fff3cd; color: #856404; }
+        .error { background: #f8d7da; color: #721c24; }
+        .results {
+            margin-top: 30px;
+            padding: 20px;
+            background: #e9ecef;
+            border-radius: 8px;
+            display: none;
+        }
+        .show { display: block; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover { background: #0056b3; }
+        .copy-btn {
+            background: #6c757d;
+            padding: 5px 10px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        .timestamp {
+            color: #6c757d;
+            font-size: 12px;
+            margin-left: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 Video Fix Manual Test</h1>
+        
+        <div class="status warning">
+            ⚠️ <strong>Note:</strong> Automated E2E tests require Node.js 18.19+. Your system has Node.js v16.20.2. 
+            Please use this manual test instead.
+        </div>
+        
+        <div class="test-section">
+            <h2>📋 Pre-Test Checklist</h2>
+            <div class="test-step">
+                <input type="checkbox" class="checkbox" id="server-running">
+                <label for="server-running" class="step-text">
+                    Development server is running (npm run dev or ./start.sh)
+                </label>
+            </div>
+            <div class="test-step">
+                <input type="checkbox" class="checkbox" id="app-loads">
+                <label for="app-loads" class="step-text">
+                    App loads without errors at <a href="http://localhost:3000" target="_blank">http://localhost:3000</a>
+                </label>
+            </div>
+            <div class="test-step">
+                <input type="checkbox" class="checkbox" id="no-syntax-errors">
+                <label for="no-syntax-errors" class="step-text">
+                    No syntax errors in the browser console (F12 → Console)
+                </label>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>🧪 Test Video Analyze Function</h2>
+            <p>Test URL (click to copy):</p>
+            <div class="url-box" onclick="copyUrl(this)">https://www.instagram.com/reels/DKDng9oPWqG/</div>
+            <button class="copy-btn" onclick="copyUrl(document.querySelector('.url-box'))">Copy</button>
+            
+            <div class="test-step">
+                <input type="checkbox" class="checkbox" id="paste-url">
+                <label for="paste-url" class="step-text">
+                    Paste the URL into the chat input
+                </label>
+            </div>
+            <div class="test-step">
+                <input type="checkbox" class="checkbox" id="download-starts">
+                <label for="download-starts" class="step-text">
+                    Download/preview appears (may show progress or "Upload complete")
+                </label>
+            </div>
+            <div class="test-step">
+                <input type="checkbox" class="checkbox" id="buttons-appear">
+                <label for="buttons-appear" class="step-text">
+                    "🔍 Analyze" and "⚙️ Reverse Engineer" buttons appear
+                </label>
+            </div>
+            <div class="test-step">
+                <input type="checkbox" class="checkbox" id="click-analyze">
+                <label for="click-analyze" class="step-text">
+                    Click "🔍 Analyze" button
+                </label>
+            </div>
+            <div class="test-step">
+                <input type="checkbox" class="checkbox" id="ai-responds">
+                <label for="ai-responds" class="step-text">
+                    AI starts processing (shows typing indicator or response)
+                </label>
+            </div>
+            <div class="test-step">
+                <input type="checkbox" class="checkbox" id="analysis-complete">
+                <label for="analysis-complete" class="step-text">
+                    AI provides video analysis with timestamps and transcription
+                </label>
+            </div>
+            <div class="test-step">
+                <input type="checkbox" class="checkbox" id="no-errors">
+                <label for="no-errors" class="step-text">
+                    NO error messages about "provide the video" or "need the video"
+                </label>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>🔧 Test Reverse Engineer Function</h2>
+            <p>Repeat the process but click "⚙️ Reverse Engineer" instead:</p>
+            
+            <div class="test-step">
+                <input type="checkbox" class="checkbox" id="re-paste">
+                <label for="re-paste" class="step-text">
+                    Paste the URL again (or use existing video if still loaded)
+                </label>
+            </div>
+            <div class="test-step">
+                <input type="checkbox" class="checkbox" id="click-reverse">
+                <label for="click-reverse" class="step-text">
+                    Click "⚙️ Reverse Engineer" button
+                </label>
+            </div>
+            <div class="test-step">
+                <input type="checkbox" class="checkbox" id="reverse-response">
+                <label for="reverse-response" class="step-text">
+                    AI provides production breakdown and recreation guide
+                </label>
+            </div>
+        </div>
+        
+        <button onclick="showResults()">Show Test Results</button>
+        
+        <div class="results" id="results">
+            <h2>📊 Test Results</h2>
+            <div id="result-summary"></div>
+            <div id="result-details"></div>
+            <p class="timestamp">Test completed at: <span id="test-time"></span></p>
+        </div>
+    </div>
+    
+    <script>
+        function copyUrl(element) {
+            const text = element.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const original = element.style.background;
+                element.style.background = '#28a745';
+                element.style.color = 'white';
+                setTimeout(() => {
+                    element.style.background = original;
+                    element.style.color = '';
+                }, 500);
+            });
+        }
+        
+        function showResults() {
+            const checkboxes = document.querySelectorAll('.checkbox');
+            const total = checkboxes.length;
+            const checked = Array.from(checkboxes).filter(cb => cb.checked).length;
+            const percentage = Math.round((checked / total) * 100);
+            
+            const summary = document.getElementById('result-summary');
+            const details = document.getElementById('result-details');
+            const results = document.getElementById('results');
+            
+            let status = 'error';
+            let message = '';
+            
+            if (percentage === 100) {
+                status = 'success';
+                message = `✅ Perfect! All ${total} tests passed. The video fix is working correctly!`;
+            } else if (percentage >= 80) {
+                status = 'success';
+                message = `✅ Good! ${checked}/${total} tests passed (${percentage}%). The core functionality is working.`;
+            } else if (percentage >= 50) {
+                status = 'warning';
+                message = `⚠️ Partial success: ${checked}/${total} tests passed (${percentage}%). Some issues remain.`;
+            } else {
+                status = 'error';
+                message = `❌ Failed: Only ${checked}/${total} tests passed (${percentage}%). The fix may not be working.`;
+            }
+            
+            summary.className = `status ${status}`;
+            summary.innerHTML = message;
+            
+            // List failed tests
+            const failed = Array.from(checkboxes).filter(cb => !cb.checked);
+            if (failed.length > 0) {
+                details.innerHTML = '<h3>Failed Tests:</h3><ul>' + 
+                    failed.map(cb => `<li>${cb.nextElementSibling.textContent.trim()}</li>`).join('') + 
+                    '</ul>';
+            } else {
+                details.innerHTML = '';
+            }
+            
+            document.getElementById('test-time').textContent = new Date().toLocaleString();
+            results.classList.add('show');
+            results.scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        // Auto-save checkbox state
+        document.querySelectorAll('.checkbox').forEach(cb => {
+            cb.addEventListener('change', () => {
+                localStorage.setItem('video-test-' + cb.id, cb.checked);
+            });
+            // Restore state
+            const saved = localStorage.getItem('video-test-' + cb.id);
+            if (saved === 'true') cb.checked = true;
+        });
+    </script>
+</body>
+</html>

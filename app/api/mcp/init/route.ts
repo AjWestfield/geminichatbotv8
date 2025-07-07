@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { MCPServerManager } from '@/lib/mcp/mcp-server-manager';
-import { isZapierMCPConfigured } from '@/lib/mcp/zapier-mcp-config';
 
 // Initialize server manager and load saved servers
 export async function GET() {
@@ -26,10 +25,10 @@ export async function GET() {
         toolsCount: server.tools?.length || 0,
         tools: server.tools,
         error: server.lastError,
-        isDefault: server.config.id === 'zapier-mcp' && isZapierMCPConfigured(),
-        autoConnect: server.config.id === 'zapier-mcp' && isZapierMCPConfigured()
+        isDefault: false,
+        autoConnect: false
       })),
-      defaultServersAdded: servers.some(s => s.config.id === 'zapier-mcp' && isZapierMCPConfigured()),
+      defaultServersAdded: false,
       autoConnectedServers: servers.filter(s => s.status === 'connected').map(s => s.config.id)
     });
   } catch (error) {

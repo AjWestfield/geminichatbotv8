@@ -8,7 +8,7 @@ import { AI_Prompt } from "@/components/ui/animated-ai-input"
 import { useState, useCallback, useRef, useEffect } from "react"
 import { UploadProgress } from "./upload-progress"
 import { AnimatePresence } from "framer-motion"
-import { generateVideoThumbnail, getVideoDuration, formatVideoDuration } from "@/lib/video-utils"
+import { generateVideoThumbnailFromFile as generateVideoThumbnail, getVideoDurationFromFile as getVideoDuration, formatVideoDuration } from "@/lib/video-utils"
 import {
   type GeneratedImage,
   generateImageId,
@@ -91,9 +91,13 @@ const processMCPToolResultForTaskSync = (..._args: any[]) => false;
 import { useBrowserAutomation } from "@/hooks/use-browser-automation"
 import { shouldTriggerBrowserTask, generateSearchUrl } from "@/lib/client-utils/browser-task-detection"
 import { containsTTSCommand, containsMultiSpeakerTTSCommand, extractTTSContent } from "@/lib/wavespeed-tts-handler"
+import { ensureInstagramThumbnail } from "@/lib/instagram-thumbnail-fix"
+import { GeminiFileValidator } from "@/lib/gemini-file-validator"
 // REMOVED: extractResearchQuery, isResearchRequest - these were causing automatic deep research activation
 
 interface FileUpload {
+  /** Direct Gemini storage URI reference */
+  geminiFileUri?: string // Direct Gemini storage URI reference
   file: File
   preview?: string
   geminiFile?: {
@@ -276,21 +280,53 @@ export default function ChatInterface({
     images: string[]
   }>({ isOpen: false, images: [] })
 
+  // ---------------------------------------------
+  // File Preview Modal
+  // ---------------------------------------------
+
+  // Types for file preview modal state
+  type FilePreviewOption = 'analyze' | 'edit' | 'animate' | 'reverse-engineer'
+  interface FilePreviewData {
+    name: string
+    url: string
+    contentType: string
+    geminiFileUri?: string
+    prompt?: string
+    videoThumbnail?: string
+    videoDuration?: number
+  }
+  interface FilePreviewModalState {
+    isOpen: boolean
+    file: FilePreviewData
+    options: FilePreviewOption[]
+  }
+
   // File preview modal state
-  const [filePreviewModal, setFilePreviewModal] = useState<{
+  const [filePreviewModal, setFilePreviewModal] = useState<FilePreviewModalState>({
+    isOpen: false,
+    file: { name: '', url: '', contentType: '' },
+    options: [],
+  }) /*
+       prompt?: string
+       videoThumbnail?: string // Video thumbnail
+       videoDuration?: number // Video duration
+     }
+     options: ('analyze' | 'edit' | 'animate' | 'reverse-engineer')[]
+   }>({
     isOpen: boolean
     file: {
       name: string
       url: string
       contentType: string
+      geminiFileUri?: string
       prompt?: string
     }
-    options: ('analyze' | 'edit' | 'animate')[]
+    options: ('analyze' | 'edit' | 'animate' | 'reverse-engineer')[]
   }>({
     isOpen: false,
     file: { name: '', url: '', contentType: '' },
     options: []
-  })
+  })*/
 
   // Ref to store handleSubmit function to avoid temporal dead zone
   const handleSubmitRef = useRef<((e?: React.FormEvent) => void) | null>(null)
@@ -759,6 +795,11 @@ export default function ChatInterface({
     name: string
     contentType: string
     url?: string
+    /**
+     * Direct playable URL for the video (e.g. Instagram/YouTube downloads)
+     * Kept separate from `url` which might point to a blob/object URL
+     */
+    videoUrl?: string
     transcription?: {
       text: string
       language?: string
@@ -769,15 +810,24 @@ export default function ChatInterface({
         text: string
       }>
     }
-    videoThumbnail?: string // Add this
-    videoDuration?: number // Add this
+    videoThumbnail?: string
+    videoDuration?: number
+    /**
+     * Original Google Gemini file URI (gs://bucket/…) used for proxy requests
+     */
+    geminiFileUri?: string
   }[]>>(initialMessageAttachments || {})
 
   // Track pending attachment for the next message
+  // Pending attachment for the next user message (nullable when cleared)
   const pendingAttachmentRef = useRef<{
     name: string
     contentType: string
     url?: string
+    /**
+     * Direct playable URL for downloaded videos (e.g. YouTube, Instagram)
+     */
+    videoUrl?: string
     transcription?: {
       text: string
       language?: string
@@ -788,12 +838,14 @@ export default function ChatInterface({
         text: string
       }>
     }
-    videoThumbnail?: string // Add this
-    videoDuration?: number // Add this
+    videoThumbnail?: string
+    videoDuration?: number
+    geminiFileUri?: string
     additionalFiles?: Array<{
       name: string
       contentType: string
       url?: string
+      videoUrl?: string
       transcription?: {
         text: string
         language?: string
@@ -806,8 +858,10 @@ export default function ChatInterface({
       }
       videoThumbnail?: string
       videoDuration?: number
+      geminiFileUri?: string
     }>
   } | null>(null)
+
 
   // Ref to track temporary message IDs for pre-setting attachments
   const tempMessageIdRef = useRef<string | null>(null)
@@ -872,6 +926,7 @@ export default function ChatInterface({
 
   // Create a ref to track which files should be sent with the next message
   const nextMessageFilesRef = useRef<{ fileUri?: string; fileMimeType?: string; transcription?: any; multipleFiles?: any[] } | null>(null)
+  const isInlineVideoSubmissionRef = useRef<boolean>(false)
 
   const { messages, input, handleInputChange, handleSubmit: originalHandleSubmit, isLoading, error, stop, ttsGenerationState, append } = useChatWithTools({
     api: "/api/chat",
@@ -921,12 +976,8 @@ export default function ChatInterface({
       // Append the browser agent response to the chat
       append({
         role: 'assistant',
-        content: response,
-        metadata: {
-          source: 'browser-agent',
-          model: 'claude-sonnet-4-20250514'
-        }
-      })
+        content: response
+      } as any)
     }
   })
 
@@ -1124,7 +1175,7 @@ export default function ChatInterface({
       console.log('[Chat Switch] Cleared sent files tracking')
 
       // Update refs
-      prevChatIdRef.current = chatId || null
+      prevChatIdRef.current = chatId ?? null
       prevInitialMessagesRef.current = initialMessages
 
       // If initialMessages is undefined (new chat), the hook will use defaultInitialMessages
@@ -1267,15 +1318,15 @@ export default function ChatInterface({
 
   // Process pending attachments when new messages are added
   useEffect(() => {
-    if (messages && messages.length > 0 && pendingAttachmentRef.current) {
+    if (messages && messages.length > 0 && pendingAttachmentRef.current!) {
       // Process immediately without delay for instant display
       // Find the latest user message
       const lastUserMessage = messages.filter(m => m.role === 'user').pop()
 
-      if (lastUserMessage && !messageAttachments[lastUserMessage.id] && pendingAttachmentRef.current) {
+      if (lastUserMessage && !messageAttachments[lastUserMessage.id] && pendingAttachmentRef.current!) {
         console.log('[Attachment Processing] Processing pending attachments for message:', lastUserMessage.id)
 
-        const pendingAttachment = pendingAttachmentRef.current
+        const pendingAttachment = pendingAttachmentRef.current!
         const newAttachments: any[] = []
 
         // Add the primary attachment
@@ -1301,6 +1352,15 @@ export default function ChatInterface({
         }))
 
         console.log('[Attachment Processing] Added', newAttachments.length, 'attachments to message:', lastUserMessage.id)
+        console.log('[Attachment Processing] Attachment details:', {
+          firstAttachment: newAttachments[0] ? {
+            name: newAttachments[0].name,
+            hasGeminiFileUri: !!newAttachments[0].geminiFileUri,
+            geminiFileUri: newAttachments[0].geminiFileUri,
+            url: newAttachments[0].url
+          } : null,
+          totalAttachments: newAttachments.length
+        })
 
         // Clear pending attachments
         pendingAttachmentRef.current = null
@@ -1940,7 +2000,7 @@ export default function ChatInterface({
     }
 
     // Update the previous chat ID
-    prevChatIdRef.current = chatId
+    prevChatIdRef.current = chatId ?? null
   }, [chatId, onResetChat])
 
   // Track initial message count when messages are first loaded
@@ -2014,7 +2074,7 @@ export default function ChatInterface({
         } else {
           // For videos without thumbnails, we can't generate from dummy content
           console.log(`[processFile] No thumbnail available for pre-uploaded video: ${file.name}`)
-          
+
           // If this is an Instagram video without thumbnail, flag it for debugging
           if ((file as any)._isInstagramVideo) {
             console.error('[processFile] Instagram video missing thumbnail!', {
@@ -2040,7 +2100,7 @@ export default function ChatInterface({
         ensureInstagramThumbnail(fileUpload);
         ensureInstagramThumbnail(file);
       }
-      
+
       return fileUpload
     }
 
@@ -2094,9 +2154,26 @@ export default function ChatInterface({
     if (file.type.startsWith("video/")) {
       try {
         console.log(`[processFile] Generating thumbnail for video: ${file.name}`)
-        fileUpload.videoThumbnail = await generateVideoThumbnail(file, 2.0)
+        const thumb = await generateVideoThumbnail(file, 2.0)
+        fileUpload.videoThumbnail = thumb ?? undefined
         fileUpload.videoDuration = await getVideoDuration(file)
         console.log(`[processFile] Video thumbnail generated, duration: ${fileUpload.videoDuration}s`)
+        
+        // Generate preview URL for local video files if not pre-uploaded
+        if (!fileUpload.geminiFile && !(file as any).isPreUploaded && !fileUpload.preview) {
+          try {
+            // Create blob URL for video preview directly from the file
+            const videoBlobUrl = URL.createObjectURL(file)
+            fileUpload.preview = videoBlobUrl
+            console.log(`[processFile] Created blob URL for video preview:`, {
+              url: videoBlobUrl,
+              fileSize: file.size,
+              fileType: file.type
+            })
+          } catch (blobError) {
+            console.error('Failed to create blob URL for video:', blobError)
+          }
+        }
       } catch (error) {
         console.error('Failed to generate video thumbnail:', error)
       }
@@ -2227,13 +2304,13 @@ export default function ChatInterface({
   useEffect(() => {
     console.trace('[EFFECT] Attachment effect triggered:', {
       messagesCount: messages?.length || 0,
-      hasPending: !!pendingAttachmentRef.current || !!pendingAttachmentBackupRef.current,
+      hasPending: !!pendingAttachmentRef.current! || !!pendingAttachmentBackupRef.current,
       messageIds: messages?.map(m => ({ id: m.id, role: m.role })) || [],
       attachmentKeys: Object.keys(messageAttachments),
       tempMessageId: tempMessageIdRef.current
     })
 
-    if (messages && messages.length > 0 && (pendingAttachmentRef.current || pendingAttachmentBackupRef.current)) {
+    if (messages && messages.length > 0 && (pendingAttachmentRef.current! || pendingAttachmentBackupRef.current)) {
       const lastMessage = messages[messages.length - 1]
       console.log('[EFFECT] Processing last message:', {
         id: lastMessage.id,
@@ -2295,7 +2372,7 @@ export default function ChatInterface({
         }
 
         // Use pending attachment (prefer current over backup)
-        const attachment = pendingAttachmentRef.current || pendingAttachmentBackupRef.current
+        const attachment = pendingAttachmentRef.current! || pendingAttachmentBackupRef.current
 
         if (!attachment && !firstMessageAttachments) {
           console.log('[EFFECT] No pending attachments or first message attachments found')
@@ -2411,7 +2488,7 @@ export default function ChatInterface({
           }
         }, 500);
 
-      } else if (lastMessage.role === 'user' && messageAttachments[lastMessage.id] && (pendingAttachmentRef.current || pendingAttachmentBackupRef.current)) {
+      } else if (lastMessage.role === 'user' && messageAttachments[lastMessage.id] && (pendingAttachmentRef.current! || pendingAttachmentBackupRef.current)) {
         // If attachments are already set (from render), just clear pending
         console.log('[EFFECT] Attachments already set during render, clearing pending refs')
         pendingAttachmentRef.current = null
@@ -2422,7 +2499,7 @@ export default function ChatInterface({
     }
 
     // ADDITIONAL: Handle case where we have selected files but no pending attachment ref
-    if (messages && messages.length > 0 && !pendingAttachmentRef.current && (selectedFile || selectedFiles.length > 0)) {
+    if (messages && messages.length > 0 && !pendingAttachmentRef.current! && (selectedFile || selectedFiles.length > 0)) {
       const lastMessage = messages[messages.length - 1];
       if (lastMessage.role === 'user' && !messageAttachments[lastMessage.id]) {
         // Check if this message was just created (within last 2 seconds)
@@ -2674,7 +2751,8 @@ export default function ChatInterface({
 
           try {
             // Generate thumbnail at 2 seconds (or 0 if video is shorter)
-            videoThumbnail = await generateVideoThumbnail(file, 2.0)
+            const thumb2 = await generateVideoThumbnail(file, 2.0)
+            videoThumbnail = thumb2 ?? undefined
             videoDuration = await getVideoDuration(file)
             console.log('Video thumbnail generated, duration:', videoDuration)
           } catch (thumbError) {
@@ -2830,7 +2908,7 @@ export default function ChatInterface({
           configurable: true
         });
       }
-      
+
       const fileUploadData = {
         file,
         preview,
@@ -2843,6 +2921,8 @@ export default function ChatInterface({
 
       console.log('[Upload] Setting selected file:', {
         fileName: file.name,
+        hasPreview: !!preview,
+        previewType: preview ? (preview.startsWith('blob:') ? 'blob' : preview.startsWith('data:') ? 'data' : 'other') : 'none',
         hasVideoThumbnail: !!videoThumbnail,
         thumbnailLength: videoThumbnail?.length || 0,
         thumbnailPrefix: videoThumbnail?.substring(0, 50)
@@ -2881,6 +2961,12 @@ export default function ChatInterface({
       if (file.type.startsWith("video/")) {
         console.log('[Upload Complete] Video file uploaded successfully')
 
+        // Check if auto-analysis should be skipped (e.g., for URL downloads)
+        const skipAutoAnalysis = (file as any).skipAutoAnalysis === true
+        if (skipAutoAnalysis) {
+          console.log('[Upload Complete] Skipping auto-analysis for URL-downloaded video file')
+        }
+
         // Show video options immediately
         setShowVideoOptions(true)
         setOptionsShownAt(Date.now())
@@ -2916,6 +3002,12 @@ export default function ChatInterface({
       else if (file.type.startsWith("audio/")) {
         console.log('[Upload Complete] Audio file uploaded successfully')
 
+        // Check if auto-analysis should be skipped (e.g., for URL downloads)
+        const skipAutoAnalysis = (file as any).skipAutoAnalysis === true
+        if (skipAutoAnalysis) {
+          console.log('[Upload Complete] Skipping auto-analysis for URL-downloaded file')
+        }
+
         // Show success message with file details
         const fileSizeMB = (file.size / 1024 / 1024).toFixed(1)
 
@@ -2927,20 +3019,25 @@ export default function ChatInterface({
         // Set status to show file is ready for analysis
         setUploadStatus('complete')
 
-        // Declare timeout variable first to avoid temporal dead zone
-        let autoAnalysisTimeout: NodeJS.Timeout
+        // DISABLED: Auto-analysis feature to prevent auto-submission
+        // Users should manually submit after file upload
+        /*
+        // Only start auto-analysis if not skipped
+        if (!skipAutoAnalysis) {
+          // Declare timeout variable first to avoid temporal dead zone
+          let autoAnalysisTimeout: NodeJS.Timeout
 
-        // Show a countdown toast for auto-analysis
-        let countdown = 3
-        let countdownToast = toast.info(`Auto-analysis starting in ${countdown}...`, {
-          description: "Click the X to cancel auto-analysis",
-          duration: 3000,
-          action: {
-            label: "Cancel",
-            onClick: () => {
-              console.log('[Auto-Analysis] Cancelled by user')
-              clearTimeout(autoAnalysisTimeout)
-            }
+          // Show a countdown toast for auto-analysis
+          let countdown = 3
+          let countdownToast = toast.info(`Auto-analysis starting in ${countdown}...`, {
+            description: "Click the X to cancel auto-analysis",
+            duration: 3000,
+            action: {
+              label: "Cancel",
+              onClick: () => {
+                console.log('[Auto-Analysis] Cancelled by user')
+                clearTimeout(autoAnalysisTimeout)
+              }
           }
         })
 
@@ -2972,6 +3069,15 @@ export default function ChatInterface({
 
           // Check if file is still selected (user hasn't removed it)
           if (selectedFile || selectedFiles.length > 0) {
+            // Double-check skipAutoAnalysis flag before proceeding
+            const currentFile = selectedFile || selectedFiles[0]
+            const shouldSkipAutoAnalysis = (currentFile?.file as any)?.skipAutoAnalysis === true
+
+            if (shouldSkipAutoAnalysis) {
+              console.log('[Auto-Analysis] Skipping auto-analysis for URL-downloaded file')
+              return
+            }
+
             console.log('[Auto-Analysis] Starting automatic analysis of video/audio file')
 
             // Set status to analyzing
@@ -3002,6 +3108,8 @@ export default function ChatInterface({
             }, 500)
           }
         }, 3000) // 3 second delay before auto-analysis
+        }
+        */
       }
 
       // Hide success message after 3 seconds
@@ -3455,8 +3563,43 @@ You can view it in the **Images** tab on the right.`,
   const handleInlineVideoOptionSelect = useCallback((option: 'analyze' | 'reverse-engineer') => {
     console.log('[InlineVideoOptions] Option selected:', option)
 
+    // Debug current file state
+    console.log('[InlineVideoOptions] Current file state:', {
+      hasSelectedFile: !!selectedFile,
+      selectedFileName: selectedFile?.file?.name,
+      selectedFileType: selectedFile?.file?.type,
+      hasGeminiFile: !!selectedFile?.geminiFile,
+      geminiUri: selectedFile?.geminiFile?.uri,
+      selectedFilesCount: selectedFiles.length,
+      nextMessageFilesRef: nextMessageFilesRef.current
+    })
+
+    // Ensure files are set in the ref before submission
+    if (selectedFile || selectedFiles.length > 0) {
+      const allFiles = selectedFile ? [selectedFile, ...selectedFiles] : selectedFiles;
+      const filesToSend = allFiles.filter(f => f.geminiFile);
+
+      if (filesToSend.length > 0) {
+        nextMessageFilesRef.current = {
+          fileUri: filesToSend[0]?.geminiFile?.uri,
+          fileMimeType: filesToSend[0]?.geminiFile?.mimeType,
+          transcription: filesToSend[0]?.transcription,
+          multipleFiles: filesToSend.map(file => ({
+            uri: file.geminiFile!.uri,
+            mimeType: file.geminiFile!.mimeType,
+            name: file.file.name,
+            transcription: file.transcription
+          }))
+        };
+        console.log('[InlineVideoOptions] Set nextMessageFilesRef:', nextMessageFilesRef.current);
+      }
+    }
+
     // Mark that user has interacted with options
     setUserHasInteractedWithOptions(true)
+
+    // Mark this as an inline video submission
+    isInlineVideoSubmissionRef.current = true
 
     // Don't hide video options immediately - keep them visible until the user removes files
     // This allows users to retry if submission fails
@@ -3516,7 +3659,9 @@ Please analyze the ENTIRE video from beginning to end with precise timing inform
       // Submit after a short delay to ensure state update
       setTimeout(() => {
         console.log('[InlineVideoOptions] Submitting video analysis request')
-        handleSubmitRef.current?.()
+        if (handleSubmitRef.current) {
+          handleSubmitRef.current()
+        }
       }, 100)
     } else if (option === 'reverse-engineer') {
       // Use enhanced reverse engineering prompt with transcription
@@ -3583,7 +3728,9 @@ Please provide actionable insights that would help someone recreate a similar vi
       // Submit after a short delay to ensure state update
       setTimeout(() => {
         console.log('[InlineVideoOptions] Submitting video reverse engineering request')
-        handleSubmitRef.current?.()
+        if (handleSubmitRef.current) {
+          handleSubmitRef.current()
+        }
       }, 100)
     }
   }, [handleInputChange])
@@ -3701,7 +3848,9 @@ Please provide actionable insights that would help someone recreate a similar vi
     setTimeout(() => {
       console.log('[handleAnalyzeAllFiles] Submitting analysis request with', allFiles.length, 'files',
         'includeReverseEngineering:', includeReverseEngineering)
-      handleSubmitRef.current?.()
+      if (handleSubmitRef.current) {
+        handleSubmitRef.current()
+      }
     }, 100)
   }, [selectedFile, selectedFiles, handleInputChange, chatId, messages]);
 
@@ -3756,14 +3905,37 @@ Please provide actionable insights that would help someone recreate a similar vi
       });
     } else if (file.file.type.startsWith('video/')) {
       // For videos, show analyze and reverse-engineer options
+      console.log('[handleFileClick] Setting up video modal with:', {
+        name: file.file.name,
+        url: file.preview,
+        hasGeminiFile: !!file.geminiFile,
+        geminiFileUri: file.geminiFileUri,
+        videoThumbnail: !!file.videoThumbnail,
+        videoDuration: file.videoDuration
+      });
+      
+      // Prioritize local preview URL for playback, keep Gemini URI for AI operations
+      const previewUrl = file.preview || '';
+      const geminiUri = file.geminiFileUri || file.geminiFile?.uri || '';
+      
+      console.log('[handleFileClick] Video URLs:', {
+        previewUrl,
+        geminiUri,
+        hasPreview: !!file.preview,
+        previewType: file.preview ? (file.preview.startsWith('blob:') ? 'blob' : file.preview.startsWith('data:') ? 'data' : 'other') : 'none'
+      });
+      
       setFilePreviewModal({
         isOpen: true,
         file: {
           name: file.file.name,
-          url: file.preview || '',
+          url: previewUrl,  // Use preview URL for playback
+          preview: previewUrl,  // Explicitly pass preview
           contentType: file.file.type,
           videoThumbnail: file.videoThumbnail,
-          videoDuration: file.videoDuration
+          videoDuration: file.videoDuration,
+          geminiFileUri: geminiUri,  // Keep Gemini URI for AI operations
+          videoUrl: previewUrl  // Also set videoUrl to preview
         },
         options: ['analyze', 'reverse-engineer']
       });
@@ -3787,8 +3959,15 @@ Please provide actionable insights that would help someone recreate a similar vi
   }, [selectedFile]);
 
   // Handle file preview modal option selection
-  const handleFilePreviewOptionSelect = useCallback((option: 'analyze' | 'edit' | 'animate' | 'reverse-engineer') => {
+  const handleFilePreviewOptionSelect = useCallback(async (option: 'analyze' | 'edit' | 'animate' | 'reverse-engineer') => {
     console.log('[handleFilePreviewOptionSelect] Option selected:', option);
+    console.log('[handleFilePreviewOptionSelect] File preview modal data:', {
+      fileName: filePreviewModal.file?.name,
+      fileUrl: filePreviewModal.file?.url,
+      fileContentType: filePreviewModal.file?.contentType,
+      hasGeminiFileUri: !!(filePreviewModal.file as any)?.geminiFileUri,
+      geminiFileUri: (filePreviewModal.file as any)?.geminiFileUri
+    });
 
     // Close the modal first
     setFilePreviewModal({ isOpen: false, file: { name: '', url: '', contentType: '' }, options: [] });
@@ -3796,10 +3975,10 @@ Please provide actionable insights that would help someone recreate a similar vi
     if (option === 'analyze') {
       // For analyze, create a specific analysis prompt for this file
       const file = filePreviewModal.file;
-      
+
       // Extract the actual Gemini URI from the proxy URL if needed
       let geminiUri = file.url;
-      
+
       // Check if we have geminiFileUri directly in the file data (from attachments)
       if ((file as any).geminiFileUri) {
         geminiUri = (file as any).geminiFileUri;
@@ -3808,24 +3987,49 @@ Please provide actionable insights that would help someone recreate a similar vi
         geminiUri = decodeURIComponent(file.url.replace('/api/video-proxy?uri=', ''));
         console.log('[handleFilePreviewOptionSelect] Extracted Gemini URI from proxy URL:', geminiUri);
       }
-      
+
+      // Validate the Gemini file if it's a Gemini URI
+      if (geminiUri.includes('generativelanguage.googleapis.com')) {
+        const apiKey = window.sessionStorage.getItem('gemini-api-key') || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+        if (!apiKey) {
+          toast.error('Gemini API key not found. Please add your API key in settings.');
+          return;
+        }
+
+        const validator = new GeminiFileValidator(apiKey);
+        const validation = await validator.validateFile(geminiUri);
+
+        console.log('[handleFilePreviewOptionSelect] File validation result:', validation);
+
+        if (!validation.isValid) {
+          toast.error(validation.error || 'File is no longer available. Please re-upload the file.');
+          return;
+        }
+      }
+
       // Create a mock file object to ensure the file is sent with the request
       const mockFile = {
-        file: { 
-          name: file.name, 
-          type: file.contentType, 
-          size: 0 
+        file: {
+          name: file.name,
+          type: file.contentType,
+          size: 0
         },
         preview: file.url,
-        geminiFile: { 
+        geminiFile: {
           uri: geminiUri,
-          mimeType: file.contentType 
+          mimeType: file.contentType
         }
       };
-      
+
+      // Fallback: If no valid Gemini URI, prompt user to re-upload
+      if (!geminiUri || geminiUri === file.url) {
+        console.log('[handleFilePreviewOptionSelect] No valid Gemini URI found, file may need re-upload');
+        toast.warning('This file may need to be re-uploaded. If the analysis fails, please upload the file again.');
+      }
+
       // Set the file as selected
       setSelectedFile(mockFile as any);
-      
+
       let analysisPrompt = `Please analyze this ${file.contentType.startsWith('image/') ? 'image' : 'file'}: ${file.name}. `;
 
       if (file.contentType.startsWith('image/')) {
@@ -3843,15 +4047,17 @@ Please provide actionable insights that would help someone recreate a similar vi
 
       setTimeout(() => {
         console.log('[handleFilePreviewOptionSelect] Submitting analysis request for:', file.name, 'with Gemini URI:', geminiUri);
-        handleSubmitRef.current?.();
+        if (handleSubmitRef.current) {
+          handleSubmitRef.current();
+        }
       }, 100);
     } else if (option === 'reverse-engineer') {
       // For reverse-engineer, use the same prompt as video reverse engineering
       const file = filePreviewModal.file;
-      
+
       // Extract the actual Gemini URI from the proxy URL if needed
       let geminiUri = file.url;
-      
+
       // Check if we have geminiFileUri directly in the file data (from attachments)
       if ((file as any).geminiFileUri) {
         geminiUri = (file as any).geminiFileUri;
@@ -3860,24 +4066,49 @@ Please provide actionable insights that would help someone recreate a similar vi
         geminiUri = decodeURIComponent(file.url.replace('/api/video-proxy?uri=', ''));
         console.log('[handleFilePreviewOptionSelect] Extracted Gemini URI from proxy URL:', geminiUri);
       }
-      
+
+      // Validate the Gemini file if it's a Gemini URI
+      if (geminiUri.includes('generativelanguage.googleapis.com')) {
+        const apiKey = window.sessionStorage.getItem('gemini-api-key') || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+        if (!apiKey) {
+          toast.error('Gemini API key not found. Please add your API key in settings.');
+          return;
+        }
+
+        const validator = new GeminiFileValidator(apiKey);
+        const validation = await validator.validateFile(geminiUri);
+
+        console.log('[handleFilePreviewOptionSelect] File validation result:', validation);
+
+        if (!validation.isValid) {
+          toast.error(validation.error || 'File is no longer available. Please re-upload the file.');
+          return;
+        }
+      }
+
       // Create a mock file object to ensure the file is sent with the request
       const mockFile = {
-        file: { 
-          name: file.name, 
-          type: file.contentType, 
-          size: 0 
+        file: {
+          name: file.name,
+          type: file.contentType,
+          size: 0
         },
         preview: file.url,
-        geminiFile: { 
+        geminiFile: {
           uri: geminiUri,
-          mimeType: file.contentType 
+          mimeType: file.contentType
         }
       };
-      
+
+      // Fallback: If no valid Gemini URI, prompt user to re-upload
+      if (!geminiUri || geminiUri === file.url) {
+        console.log('[handleFilePreviewOptionSelect] No valid Gemini URI found, file may need re-upload');
+        toast.warning('This file may need to be re-uploaded. If the analysis fails, please upload the file again.');
+      }
+
       // Set the file as selected
       setSelectedFile(mockFile as any);
-      
+
       const reverseEngineerPrompt = `Please reverse engineer this video and provide a complete breakdown including:
 
 1. **Complete Audio Transcription with Timestamps**:
@@ -3907,7 +4138,9 @@ Please analyze the entire video: ${file.name}`;
 
       setTimeout(() => {
         console.log('[handleFilePreviewOptionSelect] Submitting reverse engineering request for:', file.name, 'with Gemini URI:', geminiUri);
-        handleSubmitRef.current?.();
+        if (handleSubmitRef.current) {
+          handleSubmitRef.current();
+        }
       }, 100);
     } else {
       // For edit and animate, use the existing image option handler
@@ -4060,7 +4293,7 @@ Please analyze the entire video: ${file.name}`;
       inputValue: input,
       hasSelectedFile: !!selectedFile,
       selectedFilesCount: selectedFiles.length,
-      hasPendingAttachment: !!pendingAttachmentRef.current,
+      hasPendingAttachment: !!pendingAttachmentRef.current!,
       timestamp: Date.now()
     })
 
@@ -4091,7 +4324,7 @@ Please analyze the entire video: ${file.name}`;
     }
 
     // Check if we have input or a file or pending attachments
-    if (!input.trim() && !selectedFile && selectedFiles.length === 0 && !pendingAttachmentRef.current) {
+    if (!input.trim() && !selectedFile && selectedFiles.length === 0 && !pendingAttachmentRef.current!) {
       return
     }
 
@@ -4121,20 +4354,26 @@ Please analyze the entire video: ${file.name}`;
     // Set files for the next message in the ref
     if (allFiles.length > 0) {
       const filesToSend = allFiles.filter(f => f.geminiFile)
-      
+
       if (filesToSend.length > 0) {
         // CRITICAL: Only send files that were explicitly uploaded/downloaded for this message
         // Filter out any files that might have lingered from previous messages
         const freshFiles = filesToSend.filter(file => {
+          // If this is an inline video submission, include all files
+          if (isInlineVideoSubmissionRef.current) {
+            console.log('[handleSubmit] Including file for inline video submission:', file.file.name);
+            return true;
+          }
+
           // Check if file was recently uploaded (within last 5 minutes)
-          const fileAge = (file.file as any).uploadTimestamp 
-            ? Date.now() - (file.file as any).uploadTimestamp 
+          const fileAge = (file.file as any).uploadTimestamp
+            ? Date.now() - (file.file as any).uploadTimestamp
             : 0;
           const isFresh = fileAge < 5 * 60 * 1000; // 5 minutes
-          
+
           // Social media downloads have skipValidation flag
           const isSocialMediaDownload = (file.file as any).skipValidation === true;
-          
+
           if (!isFresh && !isSocialMediaDownload) {
             console.warn('[handleSubmit] Excluding potentially expired file:', {
               name: file.file.name,
@@ -4143,10 +4382,10 @@ Please analyze the entire video: ${file.name}`;
             });
             return false;
           }
-          
+
           return true;
         });
-        
+
         if (freshFiles.length > 0) {
           // Set the files that should be sent with this specific message
           nextMessageFilesRef.current = {
@@ -4163,7 +4402,7 @@ Please analyze the entire video: ${file.name}`;
               skipValidation: (file.file as any).skipValidation
             }))
           }
-          
+
           console.log('[handleSubmit] Set fresh files for next message:', {
             fileCount: freshFiles.length,
             files: freshFiles.map(f => ({
@@ -4184,7 +4423,7 @@ Please analyze the entire video: ${file.name}`;
     }
 
     // Only set pendingAttachmentRef if it's not already set (from social media download)
-    if (allFiles.length > 0 && !pendingAttachmentRef.current) {
+    if (allFiles.length > 0 && !pendingAttachmentRef.current!) {
       console.log('[handleSubmit] Creating pendingAttachmentRef with files:', allFiles.length)
 
       // Debug log for video files
@@ -4223,7 +4462,7 @@ Please analyze the entire video: ${file.name}`;
         return file.preview || ''
       }
 
-      pendingAttachmentRef.current = {
+      pendingAttachmentRef.current! = {
         name: primaryFile.file.name,
         contentType: primaryFile.file.type,
         url: getPlayableUrl(primaryFile),
@@ -4242,21 +4481,28 @@ Please analyze the entire video: ${file.name}`;
         }))
       }
 
+      console.log('[handleSubmit] pendingAttachmentRef created:', {
+        primaryGeminiUri: pendingAttachmentRef.current!.geminiFileUri,
+        primaryUrl: pendingAttachmentRef.current!.url,
+        additionalFilesCount: pendingAttachmentRef.current!.additionalFiles?.length || 0,
+        hasGeminiFileUri: !!pendingAttachmentRef.current!.geminiFileUri
+      })
+
       console.log('[ATTACHMENT DEBUG] Created pendingAttachmentRef:', {
-        name: pendingAttachmentRef.current.name,
-        contentType: pendingAttachmentRef.current.contentType,
-        url: pendingAttachmentRef.current.url,
-        hasVideoThumbnail: !!pendingAttachmentRef.current.videoThumbnail,
-        videoThumbnailLength: pendingAttachmentRef.current.videoThumbnail?.length || 0,
-        videoDuration: pendingAttachmentRef.current.videoDuration,
+        name: pendingAttachmentRef.current!.name,
+        contentType: pendingAttachmentRef.current!.contentType,
+        url: pendingAttachmentRef.current!.url,
+        hasVideoThumbnail: !!pendingAttachmentRef.current!.videoThumbnail,
+        videoThumbnailLength: pendingAttachmentRef.current!.videoThumbnail?.length || 0,
+        videoDuration: pendingAttachmentRef.current!.videoDuration,
         originalGeminiUri: primaryFile.geminiFile?.uri,
         urlSource: primaryFile.geminiFile?.uri ? 'proxy-url' : primaryFile.preview ? 'preview' : 'empty'
       })
 
       // Create a backup to ensure attachments persist
-      pendingAttachmentBackupRef.current = { ...pendingAttachmentRef.current };
+      pendingAttachmentBackupRef.current = { ...pendingAttachmentRef.current! };
 
-      console.log(`Pending attachments set: ${allFiles.length} file(s)`, pendingAttachmentRef.current)
+      console.log(`Pending attachments set: ${allFiles.length} file(s)`, pendingAttachmentRef.current!)
 
       // Check if this is the first user message (after welcome message)
       const userMessages = messages ? messages.filter(m => m.role === 'user') : [];
@@ -4309,10 +4555,10 @@ Please analyze the entire video: ${file.name}`;
           [tempId]: attachmentsToSet
         })
       }
-    } else if (pendingAttachmentRef.current) {
-      console.log('Using existing pendingAttachmentRef from social media download:', pendingAttachmentRef.current)
+    } else if (pendingAttachmentRef.current!) {
+      console.log('Using existing pendingAttachmentRef from social media download:', pendingAttachmentRef.current!)
       // Create backup for existing pending attachments
-      pendingAttachmentBackupRef.current = { ...pendingAttachmentRef.current };
+      pendingAttachmentBackupRef.current = { ...pendingAttachmentRef.current! };
     }
 
     // Track which files are being sent
@@ -4449,22 +4695,22 @@ Please analyze the entire video: ${file.name}`;
       }
     }
 
-    // Only call originalHandleSubmit if we have a valid message or pending attachments
-    if (input.trim() || selectedFile || selectedFiles.length > 0 || pendingAttachmentRef.current) {
+    // Only call originalHandleSubmit() if we have a valid message or pending attachments
+    if (input.trim() || selectedFile || selectedFiles.length > 0 || pendingAttachmentRef.current!) {
       lastSubmitTimeRef.current = Date.now()
-      console.log('[SUBMIT] Calling originalHandleSubmit at:', lastSubmitTimeRef.current)
+      console.log('[SUBMIT] Calling originalHandleSubmit() at:', lastSubmitTimeRef.current)
 
       // Final debug log before submission
-      if (selectedFile?.file.type.startsWith('video/') || selectedFiles.some(f => f.file.type.startsWith('video/')) || pendingAttachmentRef.current?.contentType?.startsWith('video/')) {
+      if (selectedFile?.file.type.startsWith('video/') || selectedFiles.some(f => f.file.type.startsWith('video/')) || pendingAttachmentRef.current!?.contentType?.startsWith('video/')) {
         console.log('[VIDEO DEBUG] Final state before submission:')
         console.log('[VIDEO DEBUG] Input:', input)
-        console.log('[VIDEO DEBUG] pendingAttachmentRef:', pendingAttachmentRef.current)
-        console.log('[VIDEO DEBUG] Has video in pendingAttachment:', pendingAttachmentRef.current?.contentType?.startsWith('video/'))
-        console.log('[VIDEO DEBUG] Additional video files:', pendingAttachmentRef.current?.additionalFiles?.filter(f => f.contentType?.startsWith('video/')))
+        console.log('[VIDEO DEBUG] pendingAttachmentRef:', pendingAttachmentRef.current!)
+        console.log('[VIDEO DEBUG] Has video in pendingAttachment:', pendingAttachmentRef.current!?.contentType?.startsWith('video/'))
+        console.log('[VIDEO DEBUG] Additional video files:', pendingAttachmentRef.current!?.additionalFiles?.filter(f => f.contentType?.startsWith('video/')))
       }
 
       originalHandleSubmit(e)
-      
+
       // Clear the nextMessageFilesRef after submission to ensure the next message doesn't include these files
       setTimeout(() => {
         nextMessageFilesRef.current = null
@@ -4473,7 +4719,7 @@ Please analyze the entire video: ${file.name}`;
     }
 
     // Don't clear files immediately - let the useEffect handle it after message is processed
-    // The files will be cleared when pendingAttachmentRef.current is processed and cleared
+    // The files will be cleared when pendingAttachmentRef.current! is processed and cleared
   }, [input, selectedFile, selectedFiles, originalHandleSubmit, handleInputChange, chatId, messages, messageAttachments, onMessagesChange, isDeepResearchMode, setIsDeepResearchMode, onCanvasTabChange, browserSession, startBrowserSession, navigateToBrowser, browserAgent, handleDeepResearch])
 
   // Store handleSubmit in ref to avoid temporal dead zone issues
@@ -4744,7 +4990,9 @@ Note: For full content analysis, you may want to open the page in a new tab.`
       // Submit with the image still attached
       setTimeout(() => {
         console.log('[handleEditConfirm] Submitting with file:', selectedFile?.file?.name)
-        handleSubmitRef.current?.() // Use ref to avoid initialization issues
+        if (handleSubmitRef.current) {
+          handleSubmitRef.current() // Use ref to avoid initialization issues
+        }
       }, 100)
 
       // Don't clear the file here - let handleSubmit do it after submission
@@ -4950,8 +5198,27 @@ Note: For full content analysis, you may want to open the page in a new tab.`
   }, [handleInputChange, originalHandleSubmit, imageQuality, currentImageSettings.style, currentImageSettings.size, onGeneratedImagesChange, onEditImageRequested, onImageGenerationStart])
 
   // Handle video option selection (similar to image options)
-  const handleChatVideoOptionSelect = useCallback((optionId: string, videoUri: string) => {
+  const handleChatVideoOptionSelect = useCallback(async (optionId: string, videoUri: string) => {
     console.log('[ChatInterface] Video option selected:', optionId, videoUri)
+
+    // Validate the Gemini file if it's a Gemini URI
+    if (videoUri.includes('generativelanguage.googleapis.com')) {
+      const apiKey = window.sessionStorage.getItem('gemini-api-key') || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+      if (!apiKey) {
+        toast.error('Gemini API key not found. Please add your API key in settings.');
+        return;
+      }
+
+      const validator = new GeminiFileValidator(apiKey);
+      const validation = await validator.validateFile(videoUri);
+
+      console.log('[handleChatVideoOptionSelect] File validation result:', validation);
+
+      if (!validation.isValid) {
+        toast.error(validation.error || 'Video file is no longer available. Please re-upload the file.');
+        return;
+      }
+    }
 
     if (optionId === 'analyze') {
       // Use comprehensive analysis prompt with enhanced timestamp requirements
@@ -5722,7 +5989,7 @@ Please provide actionable insights that would help someone recreate a similar vi
               isLastUserMessage,
               isFirstUserMessage,
               messageCreatedRecently,
-              hasPendingRef: !!pendingAttachmentRef.current,
+              hasPendingRef: !!pendingAttachmentRef.current!,
               hasBackupRef: !!pendingAttachmentBackupRef.current,
               hasAttachmentsInState: !!messageAttachments[message.id],
               hasFirstMessageAttachments: !!firstMessageAttachments,
@@ -5755,9 +6022,9 @@ Please provide actionable insights that would help someone recreate a similar vi
                 }, 0);
               }
             } else if ((isLastUserMessage || isFirstUserMessage) &&
-                (pendingAttachmentRef.current || pendingAttachmentBackupRef.current)) {
+                (pendingAttachmentRef.current! || pendingAttachmentBackupRef.current)) {
 
-              const pendingAttachment = pendingAttachmentRef.current || pendingAttachmentBackupRef.current;
+              const pendingAttachment = pendingAttachmentRef.current! || pendingAttachmentBackupRef.current;
               console.log('[RENDER] Using pending attachments for message:', message.id, pendingAttachment);
 
               const tempAttachments: any[] = [];

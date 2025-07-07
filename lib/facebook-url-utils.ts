@@ -316,6 +316,14 @@ export function createFileFromFacebookDownload(downloadResult: any, mediaTitle: 
     enumerable: true,
     configurable: true
   })
+
+  // Add flag to prevent auto-analysis
+  Object.defineProperty(mockFile, 'skipAutoAnalysis', {
+    value: true,
+    writable: false,
+    enumerable: true,
+    configurable: true
+  })
   
   // Add flag to skip validation for freshly downloaded files
   Object.defineProperty(mockFile, 'skipValidation', {

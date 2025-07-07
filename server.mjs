@@ -36,9 +36,18 @@ app.prepare().then(() => {
     try {
       // Increase timeout for API routes that might need database access
       if (req.url && req.url.startsWith('/api/')) {
-        // Set 30 second timeout for API routes
-        req.setTimeout(30000);
-        res.setTimeout(30000);
+        // Set longer timeout for image/video generation endpoints
+        if (req.url.includes('/api/generate-image') || 
+            req.url.includes('/api/generate-video') ||
+            req.url.includes('/api/chat')) {
+          // Set 60 second timeout for generation endpoints
+          req.setTimeout(60000);
+          res.setTimeout(60000);
+        } else {
+          // Set 30 second timeout for other API routes
+          req.setTimeout(30000);
+          res.setTimeout(30000);
+        }
       }
       
       const parsedUrl = parse(req.url, true);

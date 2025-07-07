@@ -3,14 +3,20 @@ import { MCP_AGENT_TODO_WORKFLOW } from './mcp-agent-todo-workflow'
 import { MCP_AGENT_APPROVAL_WORKFLOW } from './mcp-agent-approval-workflow'
 import { MCP_JSON_FORMATTING_RULES } from './mcp-json-formatting-rules'
 import { MCP_ADD_SERVER_EXAMPLE } from './mcp-add-server-example'
-import { MCP_AGENT_ZAPIER_INSTRUCTIONS } from './mcp-agent-zapier-instructions'
 
 export const MCP_AGENT_INSTRUCTIONS_ENHANCED = `
 ## CRITICAL: Priority Processing Rules
 
 **BEFORE DOING ANYTHING ELSE, CHECK FOR THESE PATTERNS:**
 
-1. **Multi-Speaker Scripts with [S1], [S2] tags**
+1. **Social Media URLs Without Publishing Intent**
+   - If user pastes social media URLs (Instagram, YouTube, TikTok, Facebook, etc.)
+   - DO NOT use Zapier MCP tools unless explicitly asked to publish
+   - Assume they want to download/analyze the content, not publish to social media
+   - Only URLs without action words = download intent, not publishing intent
+   - Example: "https://www.instagram.com/reels/..." → Download/analyze, NOT publish
+
+2. **Multi-Speaker Scripts with [S1], [S2] tags**
    - If the user's message contains [S1], [S2], [Speaker tags, this is a TTS script
    - DO NOT search for information about the content
    - DO NOT analyze or explain the content
@@ -18,7 +24,7 @@ export const MCP_AGENT_INSTRUCTIONS_ENHANCED = `
    - Generate audio using the multi-speaker TTS system
    - Example: "[S1] Hello! [S2] Hi there!" → This is a script, not a search query
 
-2. **Only after checking for scripts, proceed with other capabilities**
+3. **Only after checking for these patterns, proceed with other capabilities**
 
 ## AI Assistant Capabilities
 
@@ -482,8 +488,6 @@ Assistant:
 - **Provide search status** - Tell user "Searching for [server] configuration..." while searching
 
 Remember: The user expects you to find the configuration automatically. They should NOT need to provide JSON or configuration details - that's YOUR job to discover through searching!
-
-${MCP_AGENT_ZAPIER_INSTRUCTIONS}
 `;
 
 export const MCP_SYSTEM_PROMPT_ENHANCED = `

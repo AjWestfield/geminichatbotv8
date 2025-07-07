@@ -42,6 +42,7 @@ export function FilePreviewModal({ isOpen, onClose, file, onAnimate, onEdit, onA
 
   const [currentTime, setCurrentTime] = useState(0)
   const [activeSegment, setActiveSegment] = useState<number | null>(null)
+  const [videoError, setVideoError] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
 
@@ -212,21 +213,124 @@ export function FilePreviewModal({ isOpen, onClose, file, onAnimate, onEdit, onA
           {isVideo && (
             <div className="space-y-3 sm:space-y-4 h-full flex flex-col">
               {/* Video Player Section */}
-              {(file.url || (file as any).videoUrl || (file as any).geminiFileUri) ? (
-                <div className="bg-black rounded-lg overflow-hidden flex-1 flex flex-col min-h-0">
-                  <div className="flex-1 min-h-0">
-                    <video
-                      ref={videoRef}
-                      controls
-                      className="w-full h-full max-h-[40vh] sm:max-h-[45vh] md:max-h-[50vh] object-contain"
-                      preload="metadata"
-                      onTimeUpdate={handleTimeUpdate}
-                      poster={file.videoThumbnail}
-                    >
-                      <source src={file.url || (file as any).videoUrl || ''} type={file.contentType} />
-                      Your browser does not support the video element.
-                    </video>
-                  </div>
+              {(() => {
+                // Determine the video source URL
+                let videoSrc = '';
+                let isGeminiOnly = false;
+                
+                // Check for playable URLs in order of preference
+                // 1. Check preview property (should be blob or data URL)
+                if ((file as any).preview && !(file as any).preview.startsWith('https://generativelanguage.googleapis.com/')) {
+                  videoSrc = (file as any).preview;
+                } 
+                // 2. Check videoUrl property
+                else if ((file as any).videoUrl && !(file as any).videoUrl.startsWith('https://generativelanguage.googleapis.com/')) {
+                  videoSrc = (file as any).videoUrl;
+                } 
+                // 3. Check url property
+                else if (file.url && !file.url.startsWith('https://generativelanguage.googleapis.com/')) {
+                  videoSrc = file.url;
+                } 
+                // 4. If only Gemini URI is available
+                else if ((file as any).geminiFileUri && (file as any).geminiFileUri.startsWith('https://generativelanguage.googleapis.com/')) {
+                  // Gemini files cannot be directly played in browser
+                  isGeminiOnly = true;
+                  videoSrc = ''; // Don't try to proxy Gemini files for video playback
+                }
+                
+                const hasValidSource = !!videoSrc && !isGeminiOnly;
+                
+                console.log('[FilePreviewModal] Video source check:', {
+                  url: file.url,
+                  preview: (file as any).preview,
+                  videoUrl: (file as any).videoUrl,
+                  geminiFileUri: (file as any).geminiFileUri,
+                  finalVideoSrc: videoSrc,
+                  hasValidSource,
+                  isGeminiOnly,
+                  sourceType: videoSrc ? (videoSrc.startsWith('blob:') ? 'blob' : videoSrc.startsWith('data:') ? 'data' : 'other') : 'none'
+                });
+                
+                return hasValidSource ? (
+                  <div className="bg-black rounded-lg overflow-hidden flex-1 flex flex-col min-h-0">
+                    <div className="flex-1 min-h-0 relative">
+                      {videoError ? (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-10">
+                          <Video className="w-16 h-16 text-red-400 mb-4" />
+                          <p className="text-red-400 text-sm font-medium mb-2">{videoError}</p>
+                          <p className="text-gray-400 text-xs">Try downloading the video instead</p>
+                        </div>
+                      ) : null}
+                      <video
+                        ref={videoRef}
+                        controls
+                        className="w-full h-full max-h-[40vh] sm:max-h-[45vh] md:max-h-[50vh] object-contain"
+                        preload="metadata"
+                        onTimeUpdate={handleTimeUpdate}
+                        poster={file.videoThumbnail}
+                        onError={(e) => {
+                          const videoElement = e.target as HTMLVideoElement;
+                          const error = videoElement.error;
+                          let errorMessage = 'Failed to load video';
+                          
+                          if (error) {
+                            switch (error.code) {
+                              case 1:
+                                errorMessage = 'Video loading was aborted';
+                                break;
+                              case 2:
+                                errorMessage = 'Network error while loading video';
+                                break;
+                              case 3:
+                                errorMessage = 'Video format is not supported or corrupted';
+                                break;
+                              case 4:
+                                errorMessage = 'Video source is not supported';
+                                break;
+                            }
+                          }
+                          
+                          setVideoError(errorMessage);
+                          
+                          // Create a proper error object for logging
+                          const errorDetails = {
+                            videoSrc,
+                            errorCode: error?.code || 'unknown',
+                            errorMessage: error?.message || 'No error message',
+                            displayMessage: errorMessage,
+                            mediaError: error ? {
+                              code: error.code,
+                              message: error.message,
+                              MEDIA_ERR_ABORTED: error.code === 1,
+                              MEDIA_ERR_NETWORK: error.code === 2,
+                              MEDIA_ERR_DECODE: error.code === 3,
+                              MEDIA_ERR_SRC_NOT_SUPPORTED: error.code === 4
+                            } : null,
+                            event: e,
+                            readyState: videoElement.readyState,
+                            networkState: videoElement.networkState,
+                            currentSrc: videoElement.currentSrc
+                          };
+                          
+                          console.error('[FilePreviewModal] Video playback error details:', errorDetails);
+                        }}
+                        onLoadedMetadata={() => {
+                          console.log('[FilePreviewModal] Video metadata loaded successfully');
+                          setVideoError(null); // Clear any previous errors
+                        }}
+                        onLoadStart={() => {
+                          console.log('[FilePreviewModal] Video loading started:', videoSrc);
+                        }}
+                        onCanPlay={() => {
+                          console.log('[FilePreviewModal] Video can play');
+                        }}
+                      >
+                        <source src={videoSrc} type={file.contentType || 'video/mp4'} />
+                        {/* Fallback source without type to let browser detect */}
+                        <source src={videoSrc} />
+                        Your browser does not support the video element.
+                      </video>
+                    </div>
 
                   <div className="flex-shrink-0 p-3 sm:p-4 bg-black/60 border-t border-gray-800">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -283,15 +387,16 @@ export function FilePreviewModal({ isOpen, onClose, file, onAnimate, onEdit, onA
                     </div>
                   </div>
                 </div>
-              ) : (
-                <div className="bg-black/20 rounded-lg p-8 sm:p-12 text-center flex-1 flex flex-col items-center justify-center">
-                  <Video className="w-12 h-12 sm:w-16 sm:h-16 text-gray-400 mb-3 sm:mb-4" />
-                  <p className="text-gray-400 text-sm sm:text-base">Instagram Video Preview</p>
-                  <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                    {(file as any).videoUrl ? 'Loading video...' : 
-                     (file as any).geminiFileUri ? 'This video is hosted on Gemini AI' : 
-                     'The video file URL is missing'}
-                  </p>
+                ) : (
+                  <div className="bg-black/20 rounded-lg p-8 sm:p-12 text-center flex-1 flex flex-col items-center justify-center">
+                    <Video className="w-12 h-12 sm:w-16 sm:h-16 text-gray-400 mb-3 sm:mb-4" />
+                    <p className="text-gray-400 text-sm sm:text-base">Video Preview</p>
+                    <p className="text-xs sm:text-sm text-gray-500 mt-1 max-w-md mx-auto">
+                      {isGeminiOnly ? 
+                       'This video is stored on Gemini AI and cannot be played directly. Use the Analyze or Reverse Engineer buttons below to work with this video.' : 
+                       (file as any).videoUrl ? 'Loading video...' : 
+                       'The video file URL is missing'}
+                    </p>
                   {file.videoThumbnail && (
                     <div className="mt-4">
                       <img 
@@ -308,7 +413,8 @@ export function FilePreviewModal({ isOpen, onClose, file, onAnimate, onEdit, onA
                     </p>
                   )}
                 </div>
-              )}
+                );
+              })()}
               {/* Transcription Section */}
               {file.transcription && (
                 <div className="flex-shrink-0">

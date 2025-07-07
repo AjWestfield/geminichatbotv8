@@ -85,12 +85,12 @@ export async function getVideoDuration(videoPath: string): Promise<number> {
     const ytdlp = new YTDlpWrap()
 
     // Extract video metadata to get duration (follows same pattern as YouTube download)
-    const metadataOutput = await ytdlp.exec([
+    const metadataOutput = await (ytdlp.exec([
       videoPath,
       '--print', '%(duration)s',
       '--no-download',
       '--no-warnings'
-    ]) as string
+    ]) as unknown as string)
 
     const duration = parseFloat(metadataOutput.trim())
     
@@ -129,6 +129,100 @@ export function formatVideoDuration(seconds: number): string {
 
   return `${hours}:${remainingMinutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
 }
+/**
+ * Generate a thumbnail for a given File object containing a video.
+ * This utility works in the browser only.
+ * @param file Video File selected by the user.
+ * @param seekTime Time in seconds in the video to capture the frame, defaults to 2 seconds.
+ * @returns Promise resolving to a data URL string or null if generation fails.
+ */
+export async function generateVideoThumbnailFromFile(file: File, seekTime = 2): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined') {
+      // Not running in browser – cannot generate thumbnail
+      resolve(null)
+      return
+    }
+
+    const url = URL.createObjectURL(file)
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.muted = true
+    video.src = url
+    video.crossOrigin = 'anonymous'
+
+    const cleanup = () => {
+      URL.revokeObjectURL(url)
+      video.remove()
+    }
+
+    video.onloadedmetadata = () => {
+      // Clamp seek time to 10% of duration for very short clips
+      const targetTime = Math.min(seekTime, video.duration * 0.1)
+      video.currentTime = targetTime
+    }
+
+    video.onseeked = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+        const ctx = canvas.getContext('2d')
+        if (!ctx) throw new Error('Failed to get 2D context')
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
+        cleanup()
+        resolve(dataUrl)
+      } catch (err) {
+        console.warn('[VideoUtils] Failed to draw thumbnail:', err)
+        cleanup()
+        resolve(null)
+      }
+    }
+
+    video.onerror = () => {
+      console.warn('[VideoUtils] Error loading video for thumbnail generation')
+      cleanup()
+      resolve(null)
+    }
+  })
+}
+
+/**
+ * Get video duration for a given File object in the browser.
+ * Falls back to 0 on error.
+ * @param file Video File selected by the user.
+ */
+export async function getVideoDurationFromFile(file: File): Promise<number> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined') {
+      resolve(0)
+      return
+    }
+    const url = URL.createObjectURL(file)
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.src = url
+
+    const cleanup = () => {
+      URL.revokeObjectURL(url)
+      video.remove()
+    }
+
+    video.onloadedmetadata = () => {
+      const duration = video.duration || 0
+      cleanup()
+      resolve(duration)
+    }
+
+    video.onerror = () => {
+      console.warn('[VideoUtils] Error loading video for duration detection')
+      cleanup()
+      resolve(0)
+    }
+  })
+}
+
 // Utility to check if a URL is valid and accessible
 export function isValidVideoUrl(url: string): boolean {
   if (!url) return false;

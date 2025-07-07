@@ -66,27 +66,6 @@ export function useMCPAutoConnect() {
           } catch (error) {
             console.error(`[useMCPAutoConnect] Failed to connect ${server.name}:`, error)
             mcpState.setServerConnected(server.id, false)
-            
-            // Schedule a reconnection attempt for critical servers like Zapier
-            if (server.id === 'zapier-mcp') {
-              mcpReconnectService.scheduleReconnect(
-                server.id,
-                server.name,
-                async () => {
-                  await connectServer(server.id)
-                  mcpState.setServerConnected(server.id, true)
-                },
-                () => {
-                  // On successful reconnection
-                  console.log(`[useMCPAutoConnect] ${server.name} reconnected successfully`)
-                },
-                (err) => {
-                  // On final failure
-                  console.error(`[useMCPAutoConnect] ${server.name} reconnection failed permanently:`, err)
-                  mcpState.setServerConnected(server.id, false)
-                }
-              )
-            }
           }
         } else if (isEnabled && server.status === 'connected') {
           // Update the connected state to match actual status

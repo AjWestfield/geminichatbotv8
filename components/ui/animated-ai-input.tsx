@@ -860,6 +860,26 @@ export function AI_Prompt({
     // Enter to submit
     if (e.key === "Enter" && !e.shiftKey && value.trim()) {
       e.preventDefault()
+
+      // CRITICAL: Check if any social media download is in progress
+      if (false) { /* Auto-download disabled - was checking download progress */
+        console.log('[handleKeyDown] Blocked Enter submission - download in progress')
+        return
+      }
+
+      // CRITICAL: Check if the current value contains social media URLs that would trigger download
+      if (youtubeSettings.enabled && youtubeSettings.autoDownload && value) {
+        const hasYouTube = extractYouTubeUrls(value).length > 0
+        const hasInstagram = extractInstagramUrls(value).length > 0
+        const hasTikTok = extractTikTokUrls(value).length > 0
+        const hasFacebook = extractFacebookUrls(value).length > 0
+
+        if (hasYouTube || hasInstagram || hasTikTok || hasFacebook) {
+          console.log('[handleKeyDown] Blocked Enter submission - social media URLs detected')
+          return
+        }
+      }
+
       onSubmit()
       adjustHeight(true)
     }
@@ -882,7 +902,7 @@ export function AI_Prompt({
       e.preventDefault()
       handleRegenerate()
     }
-  }, [value, onSubmit, adjustHeight, handleEnhancePrompt, isEnhancing, disabled, handleUndo, handleRegenerate, hasEnhanced])
+  }, [value, onSubmit, adjustHeight, handleEnhancePrompt, isEnhancing, disabled, handleUndo, handleRegenerate, hasEnhanced, isDownloadingYoutube, isDownloadingInstagram, isDownloadingTikTok, isDownloadingFacebook, autoDownloadInProgress, youtubeSettings, extractYouTubeUrls, extractInstagramUrls, extractTikTokUrls, extractFacebookUrls])
 
   // Helper variables for button states
   const canUndo = hasEnhanced && historyIndex > 0 && !disabled
@@ -909,6 +929,48 @@ export function AI_Prompt({
       e.preventDefault()
     }
     if (!value.trim() || disabled) return
+
+    // CRITICAL: Check if any social media download is in progress
+    if (false) { /* Auto-download disabled - was checking download progress */
+      console.log('[handleSubmit] Blocked submission - download in progress')
+      return
+    }
+
+    // CRITICAL: Check if the current value contains social media URLs that would trigger download
+    if (youtubeSettings.enabled && youtubeSettings.autoDownload && value) {
+      const hasYouTube = extractYouTubeUrls(value).length > 0
+      const hasInstagram = extractInstagramUrls(value).length > 0
+      const hasTikTok = extractTikTokUrls(value).length > 0
+      const hasFacebook = extractFacebookUrls(value).length > 0
+
+      if (hasYouTube || hasInstagram || hasTikTok || hasFacebook) {
+        console.log('[handleSubmit] Blocked submission - social media URLs detected with auto-download enabled')
+        // Clear the URLs from input
+        let cleanedValue = value
+        if (hasYouTube) {
+          extractYouTubeUrls(value).forEach(urlInfo => {
+            cleanedValue = cleanedValue.replace(urlInfo.url, '').trim()
+          })
+        }
+        if (hasInstagram) {
+          extractInstagramUrls(value).forEach(urlInfo => {
+            cleanedValue = cleanedValue.replace(urlInfo.url, '').trim()
+          })
+        }
+        if (hasTikTok) {
+          extractTikTokUrls(value).forEach(urlInfo => {
+            cleanedValue = cleanedValue.replace(urlInfo.url, '').trim()
+          })
+        }
+        if (hasFacebook) {
+          extractFacebookUrls(value).forEach(urlInfo => {
+            cleanedValue = cleanedValue.replace(urlInfo.url, '').trim()
+          })
+        }
+        onChange(cleanedValue)
+        return
+      }
+    }
 
     // Reset enhancement state after successful submit
     resetEnhancementState()
@@ -1000,18 +1062,29 @@ export function AI_Prompt({
 
       // Create a file object compatible with existing upload system
       const videoTitle = result.file.displayName || getDisplayTitleFromUrl(url)
-      const mockFile = createFileFromYouTubeDownload(result, videoTitle)
+      const downloadedFile = createFileFromYouTubeDownload(result, videoTitle)
 
       // Add the downloaded video directly to the file list (like Instagram does)
+      // Mark the file to skip auto-analysis since it came from URL auto-download
+      try {
+        Object.defineProperty(downloadedFile, 'skipAutoAnalysis', {
+          value: true,
+          writable: true,
+          configurable: true
+        })
+      } catch (e) {
+        console.log('[YouTube Download] Could not set skipAutoAnalysis property')
+      }
+
       if (onFileSelect) {
-        onFileSelect(mockFile)
+        onFileSelect(downloadedFile)
       } else if (onFilesSelect) {
-        onFilesSelect([mockFile])
+        onFilesSelect([downloadedFile])
       }
 
       // Clear the YouTube URL from input after successful download
       onChange(value.replace(url, '').trim())
-      
+
       // Clear detected YouTube URLs to hide the detection UI
       setDetectedYouTubeUrls([])
 
@@ -1090,7 +1163,7 @@ export function AI_Prompt({
         geminiUri: (mockFile as any).geminiFile?.uri,
         isPreUploaded: (mockFile as any).isPreUploaded
       })
-      
+
       // Additional verification for video thumbnails
       if (mockFile.type.startsWith('video/') && !(mockFile as any).videoThumbnail) {
         console.warn('[Instagram Download] WARNING: Video file created without thumbnail!', {
@@ -1113,14 +1186,14 @@ export function AI_Prompt({
       if (onFileSelect) {
         // Create a new file object that preserves all custom properties
         const fileWithThumbnail = new File([mockFile], mockFile.name, { type: mockFile.type });
-        
+
         // Copy all custom properties
         Object.keys(mockFile).forEach(key => {
           if (key !== 'size' && key !== 'name' && key !== 'type') {
             (fileWithThumbnail as any)[key] = (mockFile as any)[key];
           }
         });
-        
+
         // Explicitly copy important properties
         if ((mockFile as any).videoThumbnail) {
           (fileWithThumbnail as any).videoThumbnail = (mockFile as any).videoThumbnail;
@@ -1134,12 +1207,12 @@ export function AI_Prompt({
         if ((mockFile as any)._isInstagramVideo) {
           (fileWithThumbnail as any)._isInstagramVideo = (mockFile as any)._isInstagramVideo;
         }
-        
+
         console.log('[handleInstagramDownload] Passing file with preserved properties:', {
           hasVideoThumbnail: !!(fileWithThumbnail as any).videoThumbnail,
           thumbnailLength: (fileWithThumbnail as any).videoThumbnail?.length || 0
         });
-        
+
         // Force thumbnail to be visible
         if (fileWithThumbnail.type.startsWith('video/') && (fileWithThumbnail as any).videoThumbnail) {
           console.log('[Instagram] Passing video with thumbnail to chat:', {
@@ -1148,19 +1221,30 @@ export function AI_Prompt({
             thumbnailPreview: (fileWithThumbnail as any).videoThumbnail.substring(0, 100)
           });
         }
-        
+
+        // Mark the file to skip auto-analysis since it came from URL auto-download
+        try {
+          Object.defineProperty(fileWithThumbnail, 'skipAutoAnalysis', {
+            value: true,
+            writable: true,
+            configurable: true
+          })
+        } catch (e) {
+          console.log('[Instagram Download] Could not set skipAutoAnalysis property')
+        }
+
         onFileSelect(fileWithThumbnail)
       } else if (onFilesSelect) {
         // Similar handling for multiple files
         const fileWithThumbnail = new File([mockFile], mockFile.name, { type: mockFile.type });
-        
+
         // Copy all custom properties
         Object.keys(mockFile).forEach(key => {
           if (key !== 'size' && key !== 'name' && key !== 'type') {
             (fileWithThumbnail as any)[key] = (mockFile as any)[key];
           }
         });
-        
+
         // Explicitly copy important properties
         if ((mockFile as any).videoThumbnail) {
           (fileWithThumbnail as any).videoThumbnail = (mockFile as any).videoThumbnail;
@@ -1174,7 +1258,18 @@ export function AI_Prompt({
         if ((mockFile as any)._isInstagramVideo) {
           (fileWithThumbnail as any)._isInstagramVideo = (mockFile as any)._isInstagramVideo;
         }
-        
+
+        // Mark the file to skip auto-analysis since it came from URL auto-download
+        try {
+          Object.defineProperty(fileWithThumbnail, 'skipAutoAnalysis', {
+            value: true,
+            writable: true,
+            configurable: true
+          })
+        } catch (e) {
+          console.log('[Instagram Download] Could not set skipAutoAnalysis property')
+        }
+
         onFilesSelect([fileWithThumbnail])
       }
 
@@ -1200,13 +1295,13 @@ export function AI_Prompt({
       console.error('Instagram download failed:', error)
 
       // Check for authentication error response
-      if (error.message === 'AUTHENTICATION_REQUIRED' || 
+      if (error.message === 'AUTHENTICATION_REQUIRED' ||
           (error.response && error.response.status === 401) ||
           error.message.includes('This content is private or requires authentication')) {
         // Store the URL and show cookie manager
         setPendingInstagramUrl(url)
         setShowCookieManager(true)
-        
+
         if (toast) {
           toast({
             title: "🔒 Authentication Required",
@@ -1300,18 +1395,39 @@ export function AI_Prompt({
 
       // Create a file object compatible with existing upload system
       const videoTitle = result.file.displayName || getTikTokDisplayTitle(url)
-      const mockFile = createFileFromTikTokDownload(result, videoTitle)
+      
+      // Initialize variable before use to avoid initialization errors
+      let downloadedFile: File
+      try {
+        downloadedFile = createFileFromTikTokDownload(result, videoTitle)
+      } catch (error) {
+        console.error('[TikTok Download] Error creating file:', error)
+        throw new Error('Failed to create file from TikTok download')
+      }
 
       // Add the downloaded video directly to the file list (like Instagram does)
-      if (onFileSelect) {
-        onFileSelect(mockFile)
-      } else if (onFilesSelect) {
-        onFilesSelect([mockFile])
+      // Mark the file to skip auto-analysis since it came from URL auto-download
+      if (downloadedFile) {
+        try {
+          Object.defineProperty(downloadedFile, 'skipAutoAnalysis', {
+            value: true,
+            writable: true,
+            configurable: true
+          })
+        } catch (e) {
+          console.log('[TikTok Download] Could not set skipAutoAnalysis property')
+        }
+      }
+
+      if (onFileSelect && downloadedFile) {
+        onFileSelect(downloadedFile)
+      } else if (onFilesSelect && downloadedFile) {
+        onFilesSelect([downloadedFile])
       }
 
       // Clear the TikTok URL from input after successful download
       onChange(value.replace(url, '').trim())
-      
+
       // Clear detected TikTok URLs to hide the detection UI
       setDetectedTikTokUrls([])
 
@@ -1353,7 +1469,7 @@ export function AI_Prompt({
 
     // Clear any existing Facebook URLs to ensure fresh download
     setDetectedFacebookUrls([])
-    
+
     setIsDownloadingFacebook(true)
     setFacebookDownloadProgress({ status: 'downloading', progress: 0, message: 'Preparing to download Facebook video...' })
 
@@ -1364,18 +1480,29 @@ export function AI_Prompt({
 
       // Create a file object compatible with existing upload system
       const videoTitle = result.file.displayName || getFacebookDisplayTitle(url)
-      const mockFile = createFileFromFacebookDownload(result, videoTitle)
+      const downloadedFile = createFileFromFacebookDownload(result, videoTitle)
 
       // Add the downloaded video directly to the file list
+      // Mark the file to skip auto-analysis since it came from URL auto-download
+      try {
+        Object.defineProperty(downloadedFile, 'skipAutoAnalysis', {
+          value: true,
+          writable: true,
+          configurable: true
+        })
+      } catch (e) {
+        console.log('[Facebook Download] Could not set skipAutoAnalysis property')
+      }
+
       if (onFileSelect) {
-        onFileSelect(mockFile)
+        onFileSelect(downloadedFile)
       } else if (onFilesSelect) {
-        onFilesSelect([mockFile])
+        onFilesSelect([downloadedFile])
       }
 
       // Clear the Facebook URL from input after successful download
       onChange(value.replace(url, '').trim())
-      
+
       // Clear detected Facebook URLs to hide the detection UI
       setDetectedFacebookUrls([])
 
@@ -1428,8 +1555,15 @@ export function AI_Prompt({
         // If auto-download is enabled, trigger download immediately
         if (youtubeSettings.autoDownload && !isDownloadingYoutube) {
           const firstUrl = detectedUrls[0]
-          if (firstUrl.normalizedUrl || firstUrl.url) {
-            handleYouTubeDownload(firstUrl.normalizedUrl || firstUrl.url, youtubeSettings.defaultQuality)
+          const urlToDownload = firstUrl.normalizedUrl || firstUrl.url
+          if (urlToDownload) {
+            // Clear the URL from input immediately
+            const cleanedValue = newValue.replace(urlToDownload, '').trim()
+            onChange(cleanedValue)
+            console.log('[YouTube] Removed URL from input during auto-download')
+
+            // Start download
+            handleYouTubeDownload(urlToDownload, youtubeSettings.defaultQuality)
           }
           // Clear detected URLs when auto-downloading
           setDetectedYouTubeUrls([])
@@ -1455,8 +1589,15 @@ export function AI_Prompt({
         // If auto-download is enabled, trigger download immediately
         if (youtubeSettings.autoDownload && !isDownloadingInstagram && !autoDownloadInProgress) {
           const firstUrl = detectedInstagramUrlsInfo[0]
-          if (firstUrl.normalizedUrl || firstUrl.url) {
-            handleInstagramDownload(firstUrl.normalizedUrl || firstUrl.url, true)
+          const urlToDownload = firstUrl.normalizedUrl || firstUrl.url
+          if (urlToDownload) {
+            // Clear the URL from input immediately
+            const cleanedValue = newValue.replace(urlToDownload, '').trim()
+            onChange(cleanedValue)
+            console.log('[Instagram] Removed URL from input during auto-download')
+
+            // Start download
+            handleInstagramDownload(urlToDownload, true)
           }
           // Clear detected URLs when auto-downloading
           setDetectedInstagramUrls([])
@@ -1488,8 +1629,18 @@ export function AI_Prompt({
         // If auto-download is enabled, trigger download immediately
         if (youtubeSettings.autoDownload && !isDownloadingTikTok) {
           const firstUrl = detectedTikTokUrlsInfo[0]
-          if (firstUrl.normalizedUrl || firstUrl.url) {
-            handleTikTokDownload(firstUrl.normalizedUrl || firstUrl.url)
+          const urlToDownload = firstUrl.normalizedUrl || firstUrl.url
+          if (urlToDownload) {
+            // Clear the URL from input immediately
+            const cleanedValue = newValue.replace(urlToDownload, '').trim()
+            onChange(cleanedValue)
+            console.log('[TikTok] Removed URL from input during auto-download')
+
+            // Start download
+            // Defer to avoid closure issues
+            setTimeout(() => {
+              handleTikTokDownload(urlToDownload)
+            }, 0)
           }
           // Clear detected URLs when auto-downloading
           setDetectedTikTokUrls([])
@@ -1517,7 +1668,7 @@ export function AI_Prompt({
         if (selectedFiles && selectedFiles.length > 0) {
           const facebookVideoId = detectedFacebookUrlsInfo[0].videoId
           if (facebookVideoId) {
-            const filteredFiles = selectedFiles.filter(file => 
+            const filteredFiles = selectedFiles.filter(file =>
               !file.name.includes(facebookVideoId)
             )
             if (filteredFiles.length !== selectedFiles.length && onFilesSelect) {
@@ -1526,12 +1677,19 @@ export function AI_Prompt({
             }
           }
         }
-        
+
         // If auto-download is enabled, trigger download immediately
         if (youtubeSettings.autoDownload && !isDownloadingFacebook) {
           const firstUrl = detectedFacebookUrlsInfo[0]
-          if (firstUrl.normalizedUrl || firstUrl.url) {
-            handleFacebookDownload(firstUrl.normalizedUrl || firstUrl.url)
+          const urlToDownload = firstUrl.normalizedUrl || firstUrl.url
+          if (urlToDownload) {
+            // Clear the URL from input immediately
+            const cleanedValue = newValue.replace(urlToDownload, '').trim()
+            onChange(cleanedValue)
+            console.log('[Facebook] Removed URL from input during auto-download')
+
+            // Start download
+            handleFacebookDownload(urlToDownload)
           }
           // Clear detected URLs when auto-downloading
           setDetectedFacebookUrls([])
@@ -1549,29 +1707,46 @@ export function AI_Prompt({
     } else {
       setDetectedFacebookUrls([])
     }
-  }, [onChange, youtubeSettings.enabled, youtubeSettings.autoDetectUrls, youtubeSettings.autoDownload, isDownloadingInstagram, autoDownloadInProgress, handleInstagramDownload, isDownloadingTikTok, handleTikTokDownload, isDownloadingFacebook, handleFacebookDownload])
+  }, [onChange, youtubeSettings.enabled, youtubeSettings.autoDetectUrls, youtubeSettings.autoDownload, youtubeSettings.defaultQuality, isDownloadingYoutube, handleYouTubeDownload, isDownloadingInstagram, autoDownloadInProgress, handleInstagramDownload, isDownloadingTikTok, handleTikTokDownload, isDownloadingFacebook, handleFacebookDownload, selectedFiles, onFilesSelect])
 
   // Paste handler
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
-    // Call the parent onPaste handler first if provided
-    onPaste?.(e)
+    // Get clipboard text first
+    const clipboardText = e.clipboardData.getData('text')
 
-    // Check clipboard for text content that might contain YouTube or Instagram URLs (only if enabled)
-    if (youtubeSettings.enabled && youtubeSettings.autoDetectUrls) {
-      const clipboardText = e.clipboardData.getData('text')
+    // Check if we should intercept paste for auto-download
+    let shouldBlockPaste = false
+
+    // Check clipboard for text content that might contain social media URLs
+    if (youtubeSettings.enabled && youtubeSettings.autoDetectUrls && youtubeSettings.autoDownload && clipboardText) {
       if (clipboardText) {
         // Check for YouTube URLs
         const detectedYouTubeUrlsList = extractYouTubeUrls(clipboardText)
         if (detectedYouTubeUrlsList.length > 0) {
           // Check if auto-download is enabled
           if (youtubeSettings.autoDownload) {
+            // Prevent default paste immediately
+            e.preventDefault()
+            e.stopPropagation()
+            shouldBlockPaste = true
+
             // Clear detected URLs immediately before starting download
             setDetectedYouTubeUrls([])
+
             // Auto-download the first detected YouTube URL
             const firstUrl = detectedYouTubeUrlsList[0]
-            if (firstUrl.normalizedUrl || firstUrl.url) {
-              handleYouTubeDownload(firstUrl.normalizedUrl || firstUrl.url, youtubeSettings.defaultQuality)
+            const urlToDownload = firstUrl.normalizedUrl || firstUrl.url
+            if (urlToDownload) {
+              // Remove URL from input but keep any other text
+              const cleanedText = clipboardText.replace(urlToDownload, '').trim()
+              if (cleanedText) {
+                onChange(value + (value ? ' ' : '') + cleanedText)
+              }
+
+              // Start download
+              handleYouTubeDownload(urlToDownload, youtubeSettings.defaultQuality)
             }
+            return // Exit paste handler completely
           } else {
             // Show the detected URLs UI for manual download
             setDetectedYouTubeUrls(prev => {
@@ -1591,13 +1766,36 @@ export function AI_Prompt({
         if (detectedInstagramUrlsList.length > 0) {
           // Check if auto-download is enabled (using YouTube settings for now)
           if (youtubeSettings.autoDownload) {
+            // Prevent default paste immediately
+            e.preventDefault()
+            e.stopPropagation()
+            shouldBlockPaste = true
+
             // Clear detected URLs immediately before starting download
             setDetectedInstagramUrls([])
+
             // Auto-download the first detected Instagram URL
             const firstUrl = detectedInstagramUrlsList[0]
-            if (firstUrl.normalizedUrl || firstUrl.url) {
-              handleInstagramDownload(firstUrl.normalizedUrl || firstUrl.url, true) // Pass true for auto-download
+            const urlToDownload = firstUrl.normalizedUrl || firstUrl.url
+            if (urlToDownload) {
+              // CRITICAL: Clear the current input value completely before download
+              onChange('')
+              console.log('[Instagram] Cleared input completely before download')
+
+              // Extract any non-URL text from clipboard
+              const cleanedText = clipboardText.replace(urlToDownload, '').trim()
+
+              // Start download
+              handleInstagramDownload(urlToDownload, true)
+
+              // After a delay, restore any non-URL text
+              if (cleanedText) {
+                setTimeout(() => {
+                  onChange(cleanedText)
+                }, 100)
+              }
             }
+            return // Exit paste handler completely
           } else {
             // Show Instagram previews for manual download
             const newPreviews = detectedInstagramUrlsList.map(url => ({
@@ -1626,13 +1824,31 @@ export function AI_Prompt({
         if (detectedTikTokUrlsList.length > 0) {
           // Check if auto-download is enabled (using YouTube settings for now)
           if (youtubeSettings.autoDownload) {
+            // Prevent default paste immediately
+            e.preventDefault()
+            e.stopPropagation()
+            shouldBlockPaste = true
+
             // Clear detected URLs immediately before starting download
             setDetectedTikTokUrls([])
+
             // Auto-download the first detected TikTok URL
             const firstUrl = detectedTikTokUrlsList[0]
-            if (firstUrl.normalizedUrl || firstUrl.url) {
-              handleTikTokDownload(firstUrl.normalizedUrl || firstUrl.url)
+            const urlToDownload = firstUrl.normalizedUrl || firstUrl.url
+            if (urlToDownload) {
+              // Remove URL from input but keep any other text
+              const cleanedText = clipboardText.replace(urlToDownload, '').trim()
+              if (cleanedText) {
+                onChange(value + (value ? ' ' : '') + cleanedText)
+              }
+
+              // Start download
+            // Defer to avoid closure issues
+            setTimeout(() => {
+              handleTikTokDownload(urlToDownload)
+            }, 0)
             }
+            return // Exit paste handler completely
           } else {
             // Show the detected URLs for manual download
             setDetectedTikTokUrls(prev => {
@@ -1656,7 +1872,7 @@ export function AI_Prompt({
           if (selectedFiles && selectedFiles.length > 0) {
             const facebookVideoId = detectedFacebookUrlsList[0].videoId
             if (facebookVideoId) {
-              const filteredFiles = selectedFiles.filter(file => 
+              const filteredFiles = selectedFiles.filter(file =>
                 !file.name.includes(facebookVideoId)
               )
               if (filteredFiles.length !== selectedFiles.length && onFilesSelect) {
@@ -1665,16 +1881,31 @@ export function AI_Prompt({
               }
             }
           }
-          
+
           // Check if auto-download is enabled (using YouTube settings for now)
           if (youtubeSettings.autoDownload) {
+            // Prevent default paste immediately
+            e.preventDefault()
+            e.stopPropagation()
+            shouldBlockPaste = true
+
             // Clear detected URLs immediately before starting download
             setDetectedFacebookUrls([])
+
             // Auto-download the first detected Facebook URL
             const firstUrl = detectedFacebookUrlsList[0]
-            if (firstUrl.normalizedUrl || firstUrl.url) {
-              handleFacebookDownload(firstUrl.normalizedUrl || firstUrl.url)
+            const urlToDownload = firstUrl.normalizedUrl || firstUrl.url
+            if (urlToDownload) {
+              // Remove URL from input but keep any other text
+              const cleanedText = clipboardText.replace(urlToDownload, '').trim()
+              if (cleanedText) {
+                onChange(value + (value ? ' ' : '') + cleanedText)
+              }
+
+              // Start download
+              handleFacebookDownload(urlToDownload)
             }
+            return // Exit paste handler completely
           } else {
             // Show the detected URLs for manual download
             setDetectedFacebookUrls(prev => {
@@ -1692,17 +1923,27 @@ export function AI_Prompt({
       }
     }
 
-    // Handle file pasting if no social media URL detected
-    const items = Array.from(e.clipboardData.items)
-    const fileItem = items.find(item => item.kind === 'file')
+    // Only call parent onPaste if we didn't block the paste
+    if (!shouldBlockPaste && onPaste) {
+      onPaste(e)
+    }
 
-    if (fileItem && onFileSelect) {
-      const file = fileItem.getAsFile()
-      if (file && isFileSupported(file)) {
-        onFileSelect(file)
+    // Handle file pasting if no social media URL was auto-downloaded
+    if (!shouldBlockPaste) {
+      const items = Array.from(e.clipboardData.items)
+      const fileItem = items.find(item => item.kind === 'file')
+
+      if (fileItem && onFileSelect) {
+        const file = fileItem.getAsFile()
+        if (file && isFileSupported(file)) {
+          onFileSelect(file)
+        }
       }
     }
-  }, [onFileSelect, onPaste, youtubeSettings.enabled, youtubeSettings.autoDetectUrls, youtubeSettings.autoDownload, youtubeSettings.defaultQuality, handleYouTubeDownload, handleInstagramDownload, handleTikTokDownload, handleFacebookDownload])
+  }, [onFileSelect, onPaste, youtubeSettings.enabled, youtubeSettings.autoDetectUrls, youtubeSettings.autoDownload, youtubeSettings.defaultQuality, handleYouTubeDownload, handleInstagramDownload, handleTikTokDownload, handleFacebookDownload, value, onChange])
+
+  // URL detection is handled directly in the onChange handler
+  // Removed problematic useEffect that was causing auto-submission loops
 
   return (
     <div className="w-full py-4">
@@ -1768,7 +2009,7 @@ export function AI_Prompt({
                               {(() => {
                                 // Check both locations for thumbnail
                                 const thumbnailToUse = selectedFile.videoThumbnail || (selectedFile.file as any).videoThumbnail;
-                                
+
                                 if (selectedFile.file.name.toLowerCase().includes('instagram')) {
                                   console.log('[Selected Video Thumbnail Debug]', {
                                     fileName: selectedFile.file.name,
@@ -1777,7 +2018,7 @@ export function AI_Prompt({
                                     thumbnailLength: thumbnailToUse?.length || 0
                                   });
                                 }
-                                
+
                                 return thumbnailToUse ? (
                                   <div className="relative w-full h-full">
                                     <img
@@ -1850,7 +2091,7 @@ export function AI_Prompt({
                                 const hasDirectThumbnail = !!file.videoThumbnail;
                                 const hasFileThumbnail = !!(file.file as any).videoThumbnail;
                                 const thumbnailToUse = file.videoThumbnail || (file.file as any).videoThumbnail;
-                                
+
                                 if (file.file.name.toLowerCase().includes('instagram')) {
                                   console.log('[Video Thumbnail Debug]', {
                                     fileName: file.file.name,
@@ -1862,7 +2103,7 @@ export function AI_Prompt({
                                     fileObject: file
                                   });
                                 }
-                                
+
                                 return thumbnailToUse ? (
                                   <div className="relative w-full h-full">
                                     <img
@@ -2376,8 +2617,12 @@ export function AI_Prompt({
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => {
-                          handleTikTokDownload(urlData.url)
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setTimeout(() => {
+                            handleTikTokDownload(urlData.url)
+                          }, 0)
 
                           // Remove this URL from detected list once download starts
                           setDetectedTikTokUrls(prev => prev.filter((_, i) => i !== index))
@@ -2390,9 +2635,13 @@ export function AI_Prompt({
 
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
                           // Quick download
-                          handleTikTokDownload(urlData.url)
+                          setTimeout(() => {
+                            handleTikTokDownload(urlData.url)
+                          }, 0)
                           setDetectedTikTokUrls(prev => prev.filter((_, i) => i !== index))
                         }}
                         className="px-2 py-1.5 bg-[#4A4A4A] hover:bg-[#5A5A5A] text-white text-xs rounded-md transition-colors"
@@ -2905,25 +3154,30 @@ export function AI_Prompt({
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  data-testid="send-button"
-                  className={cn(
-                    "rounded-xl transition-all duration-200 ease-out",
-                    "focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-0",
-                    "active:scale-95",
-                    "disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100",
-                    disabled
-                      ? "bg-white hover:bg-gray-100 px-4 py-2 flex items-center gap-2"
-                      : value.trim() || selectedFile || (selectedFiles?.length ?? 0) > 0
-                        ? "bg-white hover:bg-gray-100 p-2"
-                        : "bg-[#2B2B2B] hover:bg-[#333333] p-2 border border-[#333333]",
-                  )}
-                  aria-label={disabled ? "Stop generation" : "Send message"}
-                  title={disabled ? "Stop generation" : "Send message"}
-                  disabled={!value.trim() && !disabled && !selectedFile && (selectedFiles?.length ?? 0) === 0}
-                  onClick={disabled ? onStop : handleSubmit}
-                >
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        data-testid="send-button"
+                        className={cn(
+                          "rounded-xl transition-all duration-200 ease-out",
+                          "focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-0",
+                          "active:scale-95",
+                          "disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100",
+                          disabled
+                            ? "bg-white hover:bg-gray-100 px-4 py-2 flex items-center gap-2"
+                            : value.trim() || selectedFile || (selectedFiles?.length ?? 0) > 0
+                              ? "bg-white hover:bg-gray-100 p-2"
+                              : "bg-[#2B2B2B] hover:bg-[#333333] p-2 border border-[#333333]",
+                          // Add visual indicator when download is blocking submission
+                          (isDownloadingYoutube || isDownloadingInstagram || isDownloadingTikTok || isDownloadingFacebook || autoDownloadInProgress) && "opacity-50 cursor-wait"
+                        )}
+                        aria-label={disabled ? "Stop generation" : "Send message"}
+                        title={disabled ? "Stop generation" : "Send message"}
+                        disabled={!value.trim() && !disabled && !selectedFile && (selectedFiles?.length ?? 0) === 0}
+                        onClick={disabled ? onStop : handleSubmit}
+                      >
                   {disabled ? (
                     <>
                       <Square className="w-4 h-4 text-black fill-black" />
@@ -2937,7 +3191,19 @@ export function AI_Prompt({
                       )}
                     />
                   )}
-                </button>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        {(isDownloadingYoutube || isDownloadingInstagram || isDownloadingTikTok || isDownloadingFacebook || autoDownloadInProgress)
+                          ? "Download in progress..."
+                          : disabled
+                            ? "Stop generation"
+                            : "Send message"}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             </div>
           </div>

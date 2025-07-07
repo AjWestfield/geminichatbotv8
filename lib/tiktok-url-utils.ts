@@ -229,6 +229,13 @@ export function createFileFromTikTokDownload(downloadResult: any, videoTitle: st
   // Create a minimal File-like object that's compatible with the existing system
   const fileName = `${videoTitle.replace(/[^a-zA-Z0-9\s-]/g, '').trim()}.mp4`
   
+  console.log('[TikTok Download] Creating file from download result:', {
+    fileName,
+    geminiUri: downloadResult.file?.uri,
+    mimeType: downloadResult.file?.mimeType,
+    hasGeminiFile: !!downloadResult.file
+  })
+  
   // Create a dummy blob with minimal content to satisfy file size requirements
   const dummyContent = new Blob(['placeholder'], { type: downloadResult.file.mimeType || 'video/mp4' })
   
@@ -262,6 +269,13 @@ export function createFileFromTikTokDownload(downloadResult: any, videoTitle: st
   // Add upload timestamp for tracking freshness
   Object.defineProperty(mockFile, 'uploadTimestamp', {
     value: Date.now(),
+    writable: false,
+    enumerable: true
+  })
+
+  // Add flag to prevent auto-analysis
+  Object.defineProperty(mockFile, 'skipAutoAnalysis', {
+    value: true,
     writable: false,
     enumerable: true
   })

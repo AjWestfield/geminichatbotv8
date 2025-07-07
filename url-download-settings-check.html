@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL Auto-Download Settings Check</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        h1 { color: #fff; }
+        .section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #333;
+            border-radius: 8px;
+            border: 1px solid #444;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-weight: 500;
+            margin-left: 10px;
+        }
+        .enabled { background: #2ea043; color: white; }
+        .disabled { background: #f85149; color: white; }
+        .warning { background: #fb8500; color: white; }
+        .check-item {
+            margin: 10px 0;
+            padding: 10px;
+            background: #3a3a3a;
+            border-radius: 4px;
+        }
+        .url-test {
+            margin: 15px 0;
+            padding: 15px;
+            background: #404040;
+            border-radius: 6px;
+            font-family: monospace;
+            word-break: break-all;
+        }
+        button {
+            background: #2ea043;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover { background: #3fb950; }
+        .rate-limit-info {
+            background: #fb8500;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .tips {
+            background: #0969da;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 URL Auto-Download Settings Check</h1>
+        
+        <div class="rate-limit-info">
+            <h3>⚠️ Rate Limit Warning</h3>
+            <p>You're experiencing Gemini API rate limits (15 requests/minute on free tier).</p>
+            <p>This causes the "glitchy" behavior you mentioned.</p>
+        </div>
+        
+        <div class="section">
+            <h2>📋 Pre-Flight Checks</h2>
+            <div class="check-item">
+                1. Open your app Settings (gear icon) → Video tab
+            </div>
+            <div class="check-item">
+                2. Verify these settings:
+                <ul>
+                    <li>YouTube Integration: <span class="status enabled">Enabled</span></li>
+                    <li>Auto-detect URLs: <span class="status enabled">Enabled</span></li>
+                    <li>Auto-download: <span class="status enabled">Enabled</span> (or disabled for manual)</li>
+                </ul>
+            </div>
+            <div class="check-item">
+                3. Instagram URLs use the same settings as YouTube (for now)
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>🧪 Test URLs</h2>
+            <p>Copy these URLs to test in your app:</p>
+            
+            <div class="url-test">
+                <strong>Instagram Reel:</strong><br>
+                https://www.instagram.com/reels/DKDng9oPWqG/
+                <button onclick="copyUrl(this)">Copy</button>
+            </div>
+            
+            <div class="url-test">
+                <strong>YouTube Video:</strong><br>
+                https://www.youtube.com/watch?v=dQw4w9WgXcQ
+                <button onclick="copyUrl(this)">Copy</button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>🐛 Debug Steps</h2>
+            <ol>
+                <li><strong>Open Browser Console</strong> (F12 → Console tab)</li>
+                <li><strong>Clear Console</strong> (right-click → Clear)</li>
+                <li><strong>Paste a URL</strong> in the chat input</li>
+                <li><strong>Watch for these logs:</strong>
+                    <ul>
+                        <li><code>[URL Detection] Text changed:</code></li>
+                        <li><code>[Instagram Download] Starting download process:</code></li>
+                        <li><code>[YouTube Download] Starting download process:</code></li>
+                    </ul>
+                </li>
+                <li><strong>If rate limited:</strong> You'll see error messages</li>
+            </ol>
+        </div>
+        
+        <div class="tips">
+            <h3>💡 Tips to Avoid Rate Limits</h3>
+            <ul>
+                <li>Wait 5-10 seconds between operations</li>
+                <li>Switch to a different AI model in Settings</li>
+                <li>Upgrade your Gemini API plan for higher limits</li>
+                <li>Use manual download mode instead of auto-download</li>
+            </ul>
+        </div>
+        
+        <div class="section">
+            <h2>✅ Expected Behavior</h2>
+            <p>When working correctly:</p>
+            <ol>
+                <li>Paste URL → Download starts automatically (or preview appears)</li>
+                <li>Progress indicator shows download status</li>
+                <li>Video appears in chat input when complete</li>
+                <li>"Analyze" and "Reverse Engineer" buttons appear</li>
+                <li>Clicking buttons → AI processes the video</li>
+            </ol>
+        </div>
+        
+        <div class="section">
+            <h2>🔧 Quick Fixes</h2>
+            <button onclick="showFix('settings')">Check Settings</button>
+            <button onclick="showFix('restart')">Restart Server</button>
+            <button onclick="showFix('clear')">Clear Browser Cache</button>
+            <button onclick="showFix('model')">Switch AI Model</button>
+            
+            <div id="fix-details" style="margin-top: 15px; display: none;">
+                <!-- Fix details will appear here -->
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function copyUrl(button) {
+            const urlText = button.previousSibling.textContent.trim();
+            navigator.clipboard.writeText(urlText).then(() => {
+                const original = button.textContent;
+                button.textContent = 'Copied!';
+                button.style.background = '#2ea043';
+                setTimeout(() => {
+                    button.textContent = original;
+                    button.style.background = '';
+                }, 2000);
+            });
+        }
+        
+        function showFix(type) {
+            const details = document.getElementById('fix-details');
+            let content = '';
+            
+            switch(type) {
+                case 'settings':
+                    content = `
+                        <h4>Settings to Check:</h4>
+                        <ol>
+                            <li>Go to Settings (gear icon)</li>
+                            <li>Click on "Video" tab</li>
+                            <li>Enable "YouTube Integration"</li>
+                            <li>Enable "Auto-detect URLs"</li>
+                            <li>Choose "Auto-download" or "Manual"</li>
+                            <li>Save settings</li>
+                        </ol>
+                    `;
+                    break;
+                case 'restart':
+                    content = `
+                        <h4>Restart Development Server:</h4>
+                        <ol>
+                            <li>Stop server: Ctrl+C in terminal</li>
+                            <li>Start again: npm run dev</li>
+                            <li>Wait for "ready" message</li>
+                            <li>Refresh browser (Ctrl+R)</li>
+                        </ol>
+                    `;
+                    break;
+                case 'clear':
+                    content = `
+                        <h4>Clear Browser Cache:</h4>
+                        <ol>
+                            <li>Open DevTools (F12)</li>
+                            <li>Right-click refresh button</li>
+                            <li>Select "Empty Cache and Hard Reload"</li>
+                            <li>Or: Ctrl+Shift+R (Cmd+Shift+R on Mac)</li>
+                        </ol>
+                    `;
+                    break;
+                case 'model':
+                    content = `
+                        <h4>Switch AI Model (to avoid rate limits):</h4>
+                        <ol>
+                            <li>Go to Settings → Chat</li>
+                            <li>Try these models:
+                                <ul>
+                                    <li>gemini-1.5-flash</li>
+                                    <li>gemini-pro</li>
+                                    <li>Claude (if you have API key)</li>
+                                    <li>GPT-4 (if you have API key)</li>
+                                </ul>
+                            </li>
+                            <li>Save settings</li>
+                        </ol>
+                    `;
+                    break;
+            }
+            
+            details.innerHTML = content;
+            details.style.display = 'block';
+        }
+        
+        // Show current time for rate limit tracking
+        const timeEl = document.createElement('div');
+        timeEl.style.position = 'fixed';
+        timeEl.style.bottom = '20px';
+        timeEl.style.right = '20px';
+        timeEl.style.background = '#333';
+        timeEl.style.padding = '10px';
+        timeEl.style.borderRadius = '5px';
+        timeEl.style.fontFamily = 'monospace';
+        document.body.appendChild(timeEl);
+        
+        setInterval(() => {
+            timeEl.textContent = new Date().toLocaleTimeString();
+        }, 1000);
+    </script>
+</body>
+</html>

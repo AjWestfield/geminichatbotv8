@@ -84,7 +84,7 @@ export class MCPClientWrapper {
           
           // Don't add API key to URL - only use Authorization header
           
-          // All MCP servers use Bearer prefix, including Zapier
+          // All MCP servers use Bearer prefix
           this.transport = new StreamableHTTPClientTransport(url, {
             requestInit: {
               headers: {

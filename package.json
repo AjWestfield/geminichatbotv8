@@ -27,7 +27,6 @@
     "test-gpt-image-1": "node test-gpt-image-1.js",
     "test:improved-dia-tts": "node test-improved-dia-tts.js",
     "setup-mcp-example": "./setup-mcp-example.sh",
-    "setup-zapier-mcp": "node scripts/setup-zapier-mcp.js",
     "mcp:calculator": "cd example-servers/calculator && npm run dev",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",

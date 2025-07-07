@@ -227,6 +227,14 @@ export const toolRegistry: ToolDefinition[] = [
       'GitHub repository analysis',
       'Filesystem operations',
       'Custom tool execution'
+    ],
+    exclusionPatterns: [
+      // Exclude simple URL pastes
+      /^https?:\/\/[^\s]+$/i,
+      // Exclude social media URLs without explicit action
+      /^.{0,50}https?:\/\/(www\.)?(instagram|youtube|tiktok|facebook|twitter)\.com[^\s]*$/i,
+      // Exclude download requests
+      /\b(download|save|get)\s+.{0,20}(from|this)\s+.{0,20}(url|link|video)/i
     ]
   }
 ];

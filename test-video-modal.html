@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Modal Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        .container {
+            background: #2B2B2B;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #fff;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #333;
+            border-radius: 8px;
+            border: 1px solid #444;
+        }
+        .instructions {
+            background: #1f3a5f;
+            border: 1px solid #2d5a8f;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .code {
+            background: #1e1e1e;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .success {
+            background: #1a4d2e;
+            color: #4ade80;
+            border: 1px solid #22c55e;
+        }
+        .error {
+            background: #4c1d1d;
+            color: #f87171;
+            border: 1px solid #ef4444;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        .test-results {
+            background: #1e1e1e;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #444;
+            padding-left: 10px;
+        }
+        .log-error {
+            border-left-color: #ef4444;
+            color: #f87171;
+        }
+        .log-success {
+            border-left-color: #22c55e;
+            color: #4ade80;
+        }
+        .log-info {
+            border-left-color: #3b82f6;
+            color: #93bbfc;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 Video Modal Test Page</h1>
+        
+        <div class="instructions">
+            <h3>📋 Testing Instructions:</h3>
+            <ol>
+                <li>Open your app at <a href="http://localhost:3000" target="_blank" style="color: #60a5fa;">http://localhost:3000</a></li>
+                <li>Upload a video file using the file input</li>
+                <li>Wait for the upload to complete</li>
+                <li>Click on the video thumbnail in the chat input</li>
+                <li>Check the browser console for debug messages</li>
+            </ol>
+        </div>
+
+        <div class="test-section">
+            <h3>🔍 What to Check:</h3>
+            <ul>
+                <li>✅ Console shows: <code>[handleFileClick] File clicked: [filename]</code></li>
+                <li>✅ Console shows: <code>[handleFileClick] Setting up video modal with: {...}</code></li>
+                <li>✅ Console shows: <code>[FilePreviewModal] Video source check: {...}</code></li>
+                <li>✅ A modal dialog should appear with the video player</li>
+                <li>✅ Video should be playable with controls</li>
+            </ul>
+        </div>
+
+        <div class="test-section">
+            <h3>🐛 Common Issues:</h3>
+            <div class="code">
+// If modal doesn't open:
+1. Check that handleFileClick is being called
+2. Verify filePreviewModal state is being set
+3. Check for any JavaScript errors in console
+
+// If video doesn't play:
+1. Check video URL in console logs
+2. Verify Gemini file URI is valid
+3. Check network tab for 404 errors
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>📝 Console Commands to Debug:</h3>
+            <div class="code">
+// In browser console, you can run:
+
+// Check if modal is in DOM
+document.querySelector('[role="dialog"]')
+
+// Check for video elements
+document.querySelectorAll('video')
+
+// Check modal visibility
+document.querySelector('.fixed.inset-0')
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>🔧 Quick Fix Verification:</h3>
+            <button onclick="checkApp()">Check App Status</button>
+            <button onclick="clearLogs()">Clear Logs</button>
+            
+            <div id="testResults" class="test-results">
+                <div class="log-entry log-info">Waiting for tests...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const logs = [];
+        
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            logs.push({ timestamp, message, type });
+            updateLogs();
+        }
+        
+        function updateLogs() {
+            const container = document.getElementById('testResults');
+            container.innerHTML = logs.map(log => 
+                `<div class="log-entry log-${log.type}">[${log.timestamp}] ${log.message}</div>`
+            ).join('');
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        function clearLogs() {
+            logs.length = 0;
+            addLog('Logs cleared', 'info');
+        }
+        
+        async function checkApp() {
+            addLog('Checking app status...', 'info');
+            
+            try {
+                const response = await fetch('http://localhost:3000');
+                if (response.ok) {
+                    addLog('✅ App is running on port 3000', 'success');
+                } else {
+                    addLog(`❌ App returned status: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                addLog('❌ Cannot connect to app on port 3000', 'error');
+                addLog('Make sure the app is running with: npm run dev', 'error');
+            }
+        }
+        
+        // Auto-check on load
+        window.onload = () => {
+            addLog('Test page loaded', 'info');
+            checkApp();
+        };
+    </script>
+</body>
+</html>

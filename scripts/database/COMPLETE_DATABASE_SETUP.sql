@@ -1,5 +1,5 @@
--- Complete Database Setup for Gemini Chatbot v5
--- This creates all missing tables (videos, audios, social_media_cookies)
+-- Complete Database Setup for Gemini Chatbot v7
+-- This creates all missing tables (videos, audios, social_media_cookies, image_source_relations)
 -- Run this in Supabase SQL Editor: https://bsocqrwrikfmymklgart.supabase.com/project/bsocqrwrikfmymklgart/sql/new
 
 -- ============================================
@@ -107,7 +107,34 @@ GRANT ALL ON public.social_media_cookies TO anon;
 GRANT ALL ON public.social_media_cookies TO service_role;
 
 -- ============================================
--- 4. UPDATE TRIGGERS
+-- 4. IMAGE SOURCE RELATIONS TABLE
+-- ============================================
+DROP TABLE IF EXISTS public.image_source_relations CASCADE;
+
+CREATE TABLE public.image_source_relations (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    edited_image_id UUID NOT NULL REFERENCES public.images(id) ON DELETE CASCADE,
+    source_image_id UUID NOT NULL REFERENCES public.images(id) ON DELETE CASCADE,
+    source_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(edited_image_id, source_image_id)
+);
+
+CREATE INDEX idx_image_source_relations_edited ON public.image_source_relations(edited_image_id);
+CREATE INDEX idx_image_source_relations_source ON public.image_source_relations(source_image_id);
+
+ALTER TABLE public.image_source_relations ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow all operations on image_source_relations" ON public.image_source_relations
+    FOR ALL TO authenticated, anon
+    USING (true) WITH CHECK (true);
+
+GRANT ALL ON public.image_source_relations TO authenticated;
+GRANT ALL ON public.image_source_relations TO anon;
+GRANT ALL ON public.image_source_relations TO service_role;
+
+-- ============================================
+-- 5. UPDATE TRIGGERS
 -- ============================================
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -136,10 +163,11 @@ CREATE TRIGGER update_cookies_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================
--- 5. VERIFY INSTALLATION
+-- 6. VERIFY INSTALLATION
 -- ============================================
 SELECT 
     'Tables created successfully!' as status,
     (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'videos') as videos_exists,
     (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'audios') as audios_exists,
-    (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'social_media_cookies') as cookies_exists;
+    (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'social_media_cookies') as cookies_exists,
+    (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'image_source_relations') as image_relations_exists;

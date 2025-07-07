@@ -1,0 +1,15 @@
+{
+  "timestamp": "2025-07-03T06:20:55.425Z",
+  "environment": {
+    "node": "v16.20.2",
+    "platform": "darwin",
+    "cwd": "/Users/andersonwestfield/Desktop/geminichatbotv7"
+  },
+  "recommendations": [
+    "1. Ensure server is running: npm run dev",
+    "2. Update yt-dlp: brew upgrade yt-dlp",
+    "3. Clear yt-dlp cache: yt-dlp --rm-cache-dir",
+    "4. Test with a simple video first",
+    "5. Check browser console for errors"
+  ]
+}
